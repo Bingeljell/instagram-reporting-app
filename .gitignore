@@ -1,0 +1,22 @@
+# Secrets
+.env
+credentials.json
+/docs
+
+# Python cache
+__pycache__/
+*.pyc
+
+# Generated reports
+*.csv
+*.pptx
+
+# IDE and OS files
+.vscode/
+.idea/
+.DS_Store
+
+# Virtual environment folders
+venv/
+env/
+.venv/
