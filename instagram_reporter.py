@@ -129,33 +129,69 @@ class InstagramReporter:
         }
         return insights
 
-    def create_local_csv_report(self, insights: Dict, filename: str) -> str:
-        """Create a local CSV report."""
+    def create_local_csv_report(self, insights: Dict) -> str:
+        """
+        Creates the CSV report content in-memory and returns it as a string.
+        This is the complete, non-truncated version.
+        """
+        # Use an in-memory text buffer instead of a file
+        string_buffer = io.StringIO()
+        
+        # --- Part 1: Summary Data ---
         summary_data = [
             ['Metric', 'Value'],
             ['Total Posts', insights.get('total_posts', 0)],
             ['Average Engagement Rate', f"{insights.get('avg_engagement_rate', 0):.2f}%"],
-            # ... add other summary metrics as needed ...
+            ['Total Reach', f"{insights.get('total_reach', 0):,}"],
+            ['Total Impressions', f"{insights.get('total_impressions', 0):,}"],
+            ['Total Likes', f"{insights.get('total_likes', 0):,}"],
+            ['Total Comments', f"{insights.get('total_comments', 0):,}"],
+            ['Total Saves', f"{insights.get('total_saves', 0):,}"],
+            ['Total Video Views', f"{insights.get('total_video_views', 0):,}"],
+            ['Best Hour to Post', f"{insights.get('best_posting_hour', 'N/A')}:00"],
+            ['Best Day to Post', insights.get('best_posting_day', 'N/A')],
         ]
+        # Add content type performance dynamically
+        for content_type, performance in insights.get('content_type_performance', {}).items():
+            summary_data.append([f'{content_type} Avg Engagement', f"{performance:.2f}%"])
+        
         summary_df = pd.DataFrame(summary_data, columns=['Metric', 'Value'])
         
+        # --- Part 2: Post Performance Data ---
         post_performance_data = []
+        
+        # Process both top and bottom posts
         for post_type, posts in [('Top Performing', insights.get('top_3_posts', [])), ('Needs Improvement', insights.get('bottom_3_posts', []))]:
             for post in posts:
                 post_performance_data.append({
-                    'Performance Type': post_type, 'Caption': post.get('caption', '')[:100], 'Media Type': post.get('media_type', ''),
-                    'Engagement Rate (%)': f"{post.get('engagement_rate_on_reach', 0):.2f}", 'Reach': post.get('reach', 0), 'Link': post.get('permalink', '')
+                    'Performance Type': post_type,
+                    'Caption': post.get('caption', '')[:150] + '...' if post.get('caption') and len(post.get('caption', '')) > 150 else post.get('caption', ''),
+                    'Media Type': post.get('media_type', ''),
+                    'Engagement Rate (%)': f"{post.get('engagement_rate_on_reach', 0):.2f}",
+                    'Reach': post.get('reach', 0),
+                    'Link': post.get('permalink', '')
                 })
+        
         posts_df = pd.DataFrame(post_performance_data)
         
-        with open(filename, 'w', newline='', encoding='utf-8') as f:
-            f.write("SUMMARY METRICS\n")
-            summary_df.to_csv(f, index=False)
-            f.write("\n\nPOST PERFORMANCE DETAILS\n")
-            if not posts_df.empty: posts_df.to_csv(f, index=False)
-        return filename
+        # --- Part 3: Write everything to the in-memory buffer ---
+        string_buffer.write("INSTAGRAM MONTHLY REPORT\n")
+        string_buffer.write(f"Generated on: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n")
+        
+        string_buffer.write("SUMMARY METRICS\n")
+        summary_df.to_csv(string_buffer, index=False)
+        
+        string_buffer.write("\n\nPOST PERFORMANCE DETAILS\n")
+        if not posts_df.empty:
+            posts_df.to_csv(string_buffer, index=False)
+        else:
+            string_buffer.write("No detailed post data to display.\n")
+            
+        # Return the entire content of the buffer as a single string
+        return string_buffer.getvalue()
 
-    def create_powerpoint_report(self, insights: Dict, filename: str, title_text: str, logo_path: str):
+    def create_powerpoint_report(self, insights: Dict, title_text: str, logo_path: str):
+        print("--- RUNNING THE LATEST V3 OF CREATE_POWERPOINT_REPORT ---")
         """Creates a PowerPoint presentation."""
         prs = Presentation()
         title_slide_layout = prs.slide_layouts[0]
@@ -173,9 +209,17 @@ class InstagramReporter:
         slide.shapes.title.text = "Monthly Performance Summary"
         tf = slide.shapes.placeholders[1].text_frame
         tf.clear()
+
         summary_points = {
-            "Total Posts": insights.get('total_posts'), "Total Reach": f"{insights.get('total_reach', 0):,}",
-            "Avg Engagement Rate": f"{insights.get('avg_engagement_rate', 0):.2f}%", "Best Day": insights.get('best_posting_day'),
+        "Total Posts": insights.get('total_posts'),
+        "Total Reach": f"{insights.get('total_reach', 0):,}",
+        "Total Impressions": f"{insights.get('total_impressions', 0):,}",
+        "Average Engagement Rate": f"{insights.get('avg_engagement_rate', 0):.2f}%",
+        "Total Likes": f"{insights.get('total_likes', 0):,}",
+        "Total Comments": f"{insights.get('total_comments', 0):,}",
+        "Total Saves": f"{insights.get('total_saves', 0):,}",
+        "Best Day to Post": insights.get('best_posting_day'),
+        "Best Hour to Post": f"{insights.get('best_posting_hour', 'N/A')}:00",
         }
         for key, value in summary_points.items():
             p = tf.add_paragraph(); p.text = f"{key}: {value}"; p.level = 1
@@ -183,8 +227,11 @@ class InstagramReporter:
         self._add_collage_slide(prs, insights.get('top_3_posts', []), "Top 3 Performing Posts")
         self._add_collage_slide(prs, insights.get('bottom_3_posts', []), "Bottom 3 Performing Posts")
 
-        prs.save(filename)
-        print(f"🎉 PowerPoint report created successfully! Saved as {filename}")
+        powerpoint_buffer = io.BytesIO()
+        prs.save(powerpoint_buffer)
+        powerpoint_buffer.seek(0)
+
+        return powerpoint_buffer
 
     def _add_collage_slide(self, prs: Presentation, posts: List[Dict], title: str):
         """Helper function to add a collage slide."""
@@ -218,31 +265,39 @@ class InstagramReporter:
             except Exception as e:
                 print(f"❌ Error processing image/text for post {post.get('id')}. Reason: {e}")
 
-    def generate_report(self, days_back: int, sheet_name: str, report_title: str, logo_path: str) -> str:
-        """The main method to generate all reports."""
+    def generate_report(self, days_back: int, report_title: str, logo_path: str):
+        """
+        The main method to generate all reports in-memory.
+        This version is updated to call the new in-memory report functions.
+
+        Returns:
+            A tuple containing the CSV data (as a string) and the PowerPoint data (as a BytesIO object).
+        """
         print("📱 Fetching Instagram posts...")
         posts = self.get_posts_data(days_back)
-        if not posts: print("❌ No posts found. Aborting."); return ""
+        if not posts:
+            # For Streamlit, it's better to raise an error that the app can catch and display.
+            raise ValueError("No posts were found for the selected date range. Please try a different range.")
 
-        print(f"✅ Found {len(posts)} posts."); print("📊 Analyzing post performance...")
+        print(f"✅ Found {len(posts)} posts.")
+        print("📊 Analyzing post performance...")
         insights = self.analyze_posts(posts)
-        if not insights: print("❌ Could not generate insights. Aborting."); return ""
+        if not insights:
+            raise ValueError("Could not generate insights from the fetched data.")
 
-        base_name = os.path.splitext(sheet_name)[0]
-        csv_filename, pptx_filename = f"{base_name}.csv", f"{base_name}.pptx"
-
-        print(f"\n📝 Creating CSV data report: {csv_filename}...")
-        try:
-            csv_path = self.create_local_csv_report(insights, filename=csv_filename)
-            print("📄 Local CSV report created successfully!")
-        except Exception as e:
-            print(f"❌❌ Critical Error creating CSV report. Aborting. Error: {e}"); return ""
-
-        print(f"\n🖼️  Creating PowerPoint presentation: {pptx_filename}...")
-        try:
-            self.create_powerpoint_report(insights, filename=pptx_filename, title_text=report_title, logo_path=logo_path)
-        except Exception as e:
-            print(f"⚠️  Could not create PowerPoint report. CSV is still available. Error: {e}")
-
-        print("\n✅ All reports generated.")
-        return csv_path
+        # --- Generate files in-memory ---
+        # Call the new functions. Notice they no longer need a 'filename'.
+        print("\n📝 Creating CSV data in memory...")
+        csv_data = self.create_local_csv_report(insights)
+        
+        print("🖼️  Creating PowerPoint presentation in memory...")
+        pptx_data = self.create_powerpoint_report(
+            insights=insights, 
+            title_text=report_title, 
+            logo_path=logo_path
+        )
+        
+        print("\n✅ All reports generated successfully in memory.")
+        
+        # Return the data objects for the Streamlit app to handle
+        return csv_data, pptx_data
