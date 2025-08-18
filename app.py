@@ -1,157 +1,156 @@
 # app.py
 
 import streamlit as st
-import tempfile
 import os
+import tempfile
 from datetime import datetime, timedelta
 from dotenv import load_dotenv
+import requests
 
-# Import our reporting engine
 from instagram_reporter import InstagramReporter
-from config import DEFAULT_API_VERSION
+from config import DEFAULT_API_VERSION, FACEBOOK_GRAPH_URL # Add FACEBOOK_GRAPH_URL
 
+# --- 1. CONFIGURATION & SETUP ---
+st.set_page_config(page_title="Instagram Report Generator", page_icon="📊", layout="centered")
+load_dotenv()
+APP_ID = os.getenv("META_APP_ID")
+APP_SECRET = os.getenv("META_APP_SECRET")
+BASE_REDIRECT_URI = "http://localhost:8501/"
 
-# ====================================================================
-# --- 🕵️  THIS IS OUR DEBUGGING CODE ---
-# We are asking Python: "Where did you find the 'instagram_reporter' module?"
-# This will print the full file path directly onto the webpage.
-import instagram_reporter
-st.subheader("🕵️ Debug Information")
-st.write(f"**Path to the loaded 'instagram_reporter.py' file:**")
-st.code(instagram_reporter.__file__)
-st.divider()
-# ====================================================================
+# --- 2. HELPER & AUTHENTICATION LOGIC ---
 
-
-# --- Page Configuration ---
-# This must be the first Streamlit command in your script
-st.set_page_config(
-    page_title="Instagram Report Generator",
-    page_icon="📊",
-    layout="centered"
-)
-
-# --- App Title ---
-st.title("📊 Instagram Report Generator")
-st.write(
-    "Welcome! This tool helps you create a CSV and PowerPoint performance report for your Instagram account. "
-    "Simply choose your settings below and click 'Generate Report'."
-)
-st.divider() # Adds a horizontal line
-
-# --- 1. SETTINGS & INPUT FORM ---
-# We use st.form to group inputs and have a single submission button.
-with st.form(key="report_form"):
-    st.header("Step 1: Configure Your Report")
-
-    # --- Date Range Selection ---
-    # Create two columns for a cleaner layout
-    col1, col2 = st.columns(2)
-    with col1:
-        start_date = st.date_input(
-            "Start Date", 
-            value=datetime.now() - timedelta(days=30) # Default to 30 days ago
-        )
-    with col2:
-        end_date = st.date_input(
-            "End Date",
-            value=datetime.now() # Default to today
-        )
-
-    # --- Text Inputs ---
-    report_title = st.text_input(
-        "Report Title", 
-        value="Instagram Performance Report" # Default title
+def get_login_url():
+    """Constructs the Facebook Login URL."""
+    scopes = "pages_show_list,pages_read_engagement,instagram_basic,instagram_manage_insights"
+    redirect_uri = BASE_REDIRECT_URI
+    return (
+        f"https://www.facebook.com/v19.0/dialog/oauth?"
+        f"client_id={APP_ID}&"
+        f"redirect_uri={redirect_uri}&"
+        f"state=st_app&"
+        f"scope={scopes}"
     )
-    output_filename = st.text_input(
-        "Output Filename (without extension)",
-        value=f"Instagram_Report_{datetime.now().strftime('%Y-%m')}" # Default filename
+
+def handle_auth_callback():
+    """Exchanges the authorization code for an access token."""
+    auth_code = st.query_params.get("code")
+    if not auth_code or 'access_token' in st.session_state:
+        return
+
+    api_version = DEFAULT_API_VERSION # Or get from config
+    redirect_uri = BASE_REDIRECT_URI
+    token_url = (
+        f"{FACEBOOK_GRAPH_URL}/{api_version}/oauth/access_token?"
+        f"client_id={APP_ID}&"
+        f"redirect_uri={redirect_uri}&"
+        f"client_secret={APP_SECRET}&"
+        f"code={auth_code}"
     )
     
-    # --- File Uploader for Logo ---
-    logo_file = st.file_uploader(
-        "Upload Your Logo (Optional)",
-        type=['png', 'jpg', 'jpeg']
-    )
+    response = requests.get(token_url)
+    st.query_params.clear()
 
-    # --- The 'Submit' button for the form ---
-    submitted = st.form_submit_button("Generate Report 🚀")
-
-
-# --- 2. REPORT GENERATION LOGIC ---
-# This block will only run when the 'Generate Report' button is pressed.
-if submitted:
-    # ... (session state clearing and date validation is the same) ...
-    # Clear any old report data first
-    if 'report_generated' in st.session_state:
-        del st.session_state['report_generated']
+    if response.status_code == 200 and 'access_token' in response.json():
+        token_data = response.json()
+        st.session_state['access_token'] = token_data['access_token']
         
-    if start_date > end_date:
-        st.error("Error: The start date cannot be after the end date.")
+        # --- THE FIX IS HERE ---
+        # We are now asking for the linked Instagram account at the same time we get the page list.
+        pages_url = (
+            f"{FACEBOOK_GRAPH_URL}/me/accounts?"
+            f"fields=name,id,instagram_business_account{{name,username}}&" # Ask for the IG account
+            f"access_token={token_data['access_token']}"
+        )
+        # ------------------------
+
+        pages_response = requests.get(pages_url)
+        if pages_response.status_code == 200:
+            all_pages = pages_response.json().get('data', [])
+            # --- FILTERING LOGIC ---
+            # Now, we only keep the pages that actually have an Instagram account linked.
+            eligible_pages = [page for page in all_pages if 'instagram_business_account' in page]
+            st.session_state['user_pages'] = eligible_pages
+        
+        st.rerun() 
     else:
-        load_dotenv()
-        access_token = os.getenv("META_ACCESS_TOKEN")
-        page_id = os.getenv("META_PAGE_ID")
+        st.session_state['auth_error'] = f"Token exchange failed: {response.json().get('error', {}).get('message')}"
+        st.rerun()
 
-        if not all([access_token, page_id]):
-            st.error("FATAL ERROR: META_ACCESS_TOKEN and PAGE_ID must be set in your .env file.")
-        else:
-            with st.spinner("Generating your report... This may take a moment..."):
-                try:
-                    # --- SAFER FILE HANDLING LOGIC ---
-                    logo_path = None
-                    # Create a temporary directory to store the uploaded file
-                    with tempfile.TemporaryDirectory() as temp_dir:
-                        if logo_file is not None:
-                            # Create a path inside the temporary directory
-                            logo_path = os.path.join(temp_dir, logo_file.name)
-                            # Write the uploaded file's content to this new temporary path
-                            with open(logo_path, "wb") as f:
-                                f.write(logo_file.getbuffer())
-                        
-                        days_back = (end_date - start_date).days
+handle_auth_callback()
 
-                        reporter = InstagramReporter(access_token, page_id, api_version=DEFAULT_API_VERSION)
-                        
-                        csv_data, pptx_data = reporter.generate_report(
-                            days_back=days_back,
-                            report_title=report_title,
-                            logo_path=logo_path # Pass the path to the temporary file
-                        )
-                        
-                        # Save results to session state
-                        st.session_state['csv_report_data'] = csv_data
-                        st.session_state['pptx_report_data'] = pptx_data
-                        st.session_state['output_filename'] = output_filename
-                        st.session_state['report_generated'] = True
+if 'auth_error' in st.session_state:
+    st.error(st.session_state.auth_error)
+    del st.session_state.auth_error 
 
-                    # The 'with tempfile.TemporaryDirectory()' block automatically
-                    # cleans up the directory and the file inside it when we're done.
-                    # No manual os.remove() is needed!
-
-                except Exception as e:
-                    st.error(f"An error occurred during report generation: {e}")
-
-
-if 'report_generated' in st.session_state and st.session_state['report_generated']:
-    st.success("🎉 Your reports are ready!")
+if 'access_token' not in st.session_state:
+    st.write("Welcome! Please log in with Facebook to continue.")
+    st.link_button("Login with Facebook", get_login_url(), use_container_width=True)
+else:
+    # --- LOGGED-IN STATE (THIS IS THE MISSING CODE) ---
+    st.success("You are successfully logged in!")
     st.divider()
-    st.header("Step 2: Download Your Reports")
+    
+    pages = st.session_state.get('user_pages', [])
+    if not pages:
+        st.warning("You do not seem to manage any Facebook Pages. Please ensure your account has the correct permissions and that you granted them during login.")
+        if st.button("Logout"):
+            st.session_state.clear()
+            st.rerun()
+    else:
+        # --- UI FOR PAGE SELECTION AND REPORT GENERATION ---
+        page_options = {page['name']: page['id'] for page in pages}
+        selected_page_name = st.selectbox("Select a Facebook Page to report on:", options=page_options.keys())
+        
+        if selected_page_name:
+            selected_page_id = page_options[selected_page_name]
 
-    dl_col1, dl_col2 = st.columns(2)
-    with dl_col1:
-        st.download_button(
-            label="📥 Download CSV Report",
-            # Get the data from the session state
-            data=st.session_state['csv_report_data'],
-            # Get the filename from the session state
-            file_name=f"{st.session_state['output_filename']}.csv",
-            mime="text/csv",
-        )
-    with dl_col2:
-        st.download_button(
-            label="📥 Download PowerPoint Report",
-            data=st.session_state['pptx_report_data'],
-            file_name=f"{st.session_state['output_filename']}.pptx",
-            mime="application/vnd.openxmlformats-officedocument.presentationml.presentation",
-        )
+            with st.form(key="report_form"):
+                st.header("Step 1: Configure Your Report")
+                col1, col2 = st.columns(2)
+                with col1:
+                    start_date = st.date_input("Start Date", value=datetime.now() - timedelta(days=30))
+                with col2:
+                    end_date = st.date_input("End Date", value=datetime.now())
+                report_title = st.text_input("Report Title", value=f"{selected_page_name} Performance Report")
+                output_filename = st.text_input("Output Filename", value=f"{selected_page_name}_Report_{datetime.now().strftime('%Y-%m')}")
+                logo_file = st.file_uploader("Upload a Logo (Optional)", type=['png', 'jpg', 'jpeg'])
+                submitted = st.form_submit_button("Generate Report 🚀")
+
+            if submitted:
+                # Clear old report data from session state
+                if 'report_ready' in st.session_state:
+                    del st.session_state['report_ready']
+                
+                with st.spinner("Generating... This may take a moment..."):
+                    try:
+                        logo_path = None
+                        with tempfile.TemporaryDirectory() as temp_dir:
+                            if logo_file:
+                                logo_path = os.path.join(temp_dir, logo_file.name)
+                                with open(logo_path, "wb") as f: f.write(logo_file.getbuffer())
+                            
+                            reporter = InstagramReporter(st.session_state['access_token'], selected_page_id)
+                            csv_data, pptx_data = reporter.generate_report(
+                                days_back=(end_date - start_date).days,
+                                report_title=report_title,
+                                logo_path=logo_path
+                            )
+                            st.session_state['csv_data'] = csv_data
+                            st.session_state['pptx_data'] = pptx_data
+                            st.session_state['filename'] = output_filename
+                            st.session_state['report_ready'] = True
+                    except Exception as e:
+                        st.error(f"An error occurred: {e}")
+
+            if 'report_ready' in st.session_state:
+                st.divider()
+                st.header("Step 2: Download Your Reports")
+                dl_col1, dl_col2 = st.columns(2)
+                with dl_col1:
+                    st.download_button("📥 Download CSV", st.session_state['csv_data'], f"{st.session_state['filename']}.csv")
+                with dl_col2:
+                    st.download_button("📥 Download PowerPoint", st.session_state['pptx_data'], f"{st.session_state['filename']}.pptx")
+
+        if st.button("Logout"):
+            st.session_state.clear()
+            st.rerun()
