@@ -1,6 +1,7 @@
 # app.py
 
 import streamlit as st
+import tempfile
 import os
 from datetime import datetime, timedelta
 from dotenv import load_dotenv
@@ -80,6 +81,11 @@ with st.form(key="report_form"):
 # --- 2. REPORT GENERATION LOGIC ---
 # This block will only run when the 'Generate Report' button is pressed.
 if submitted:
+    # ... (session state clearing and date validation is the same) ...
+    # Clear any old report data first
+    if 'report_generated' in st.session_state:
+        del st.session_state['report_generated']
+        
     if start_date > end_date:
         st.error("Error: The start date cannot be after the end date.")
     else:
@@ -92,49 +98,60 @@ if submitted:
         else:
             with st.spinner("Generating your report... This may take a moment..."):
                 try:
+                    # --- SAFER FILE HANDLING LOGIC ---
                     logo_path = None
-                    if logo_file is not None:
-                        with open(logo_file.name, "wb") as f:
-                            f.write(logo_file.getbuffer())
-                        logo_path = logo_file.name
-                    
-                    days_back = (end_date - start_date).days
+                    # Create a temporary directory to store the uploaded file
+                    with tempfile.TemporaryDirectory() as temp_dir:
+                        if logo_file is not None:
+                            # Create a path inside the temporary directory
+                            logo_path = os.path.join(temp_dir, logo_file.name)
+                            # Write the uploaded file's content to this new temporary path
+                            with open(logo_path, "wb") as f:
+                                f.write(logo_file.getbuffer())
+                        
+                        days_back = (end_date - start_date).days
 
-                    reporter = InstagramReporter(access_token, page_id, api_version=DEFAULT_API_VERSION)
-                    
-                    # --- CALL THE MODIFIED ENGINE ---
-                    # It now returns two in-memory file objects
-                    csv_data, pptx_data = reporter.generate_report(
-                        days_back=days_back,
-                        report_title=report_title,
-                        logo_path=logo_path
-                    )
-                    
-                    st.success("🎉 Your reports are ready!")
-
-                    # --- DISPLAY DOWNLOAD BUTTONS ---
-                    st.divider()
-                    st.header("Step 2: Download Your Reports")
-
-                    # Create two columns for the buttons
-                    dl_col1, dl_col2 = st.columns(2)
-                    with dl_col1:
-                        st.download_button(
-                            label="📥 Download CSV Report",
-                            data=csv_data,
-                            file_name=f"{output_filename}.csv",
-                            mime="text/csv",
+                        reporter = InstagramReporter(access_token, page_id, api_version=DEFAULT_API_VERSION)
+                        
+                        csv_data, pptx_data = reporter.generate_report(
+                            days_back=days_back,
+                            report_title=report_title,
+                            logo_path=logo_path # Pass the path to the temporary file
                         )
-                    with dl_col2:
-                        st.download_button(
-                            label="📥 Download PowerPoint Report",
-                            data=pptx_data,
-                            file_name=f"{output_filename}.pptx",
-                            mime="application/vnd.openxmlformats-officedocument.presentationml.presentation",
-                        )
+                        
+                        # Save results to session state
+                        st.session_state['csv_report_data'] = csv_data
+                        st.session_state['pptx_report_data'] = pptx_data
+                        st.session_state['output_filename'] = output_filename
+                        st.session_state['report_generated'] = True
 
-                    if logo_path and os.path.exists(logo_path):
-                        os.remove(logo_path)
+                    # The 'with tempfile.TemporaryDirectory()' block automatically
+                    # cleans up the directory and the file inside it when we're done.
+                    # No manual os.remove() is needed!
 
                 except Exception as e:
                     st.error(f"An error occurred during report generation: {e}")
+
+
+if 'report_generated' in st.session_state and st.session_state['report_generated']:
+    st.success("🎉 Your reports are ready!")
+    st.divider()
+    st.header("Step 2: Download Your Reports")
+
+    dl_col1, dl_col2 = st.columns(2)
+    with dl_col1:
+        st.download_button(
+            label="📥 Download CSV Report",
+            # Get the data from the session state
+            data=st.session_state['csv_report_data'],
+            # Get the filename from the session state
+            file_name=f"{st.session_state['output_filename']}.csv",
+            mime="text/csv",
+        )
+    with dl_col2:
+        st.download_button(
+            label="📥 Download PowerPoint Report",
+            data=st.session_state['pptx_report_data'],
+            file_name=f"{st.session_state['output_filename']}.pptx",
+            mime="application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        )

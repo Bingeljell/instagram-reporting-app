@@ -2,6 +2,7 @@
 .env
 credentials.json
 /docs
+/reports
 
 # Python cache
 __pycache__/
