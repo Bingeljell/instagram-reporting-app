@@ -149,7 +149,7 @@ This section outlines the plan for turning the tool into a commercial product.
 *   **Deployment:** Streamlit Community Cloud, GitHub
 *   **Future SaaS Stack:** PostgreSQL, Redis, Celery, Stripe
 
-## 6. Notes
+## 6. Notes, Features to add and Learnings
 
 *   **Facebook Graph API:** Recommend a quick Google search to get up to date on the latest changes to the Facebook Graph API - especially with regards to depricated metrics such as video_views and impressions which have been replaced by just 'views'. Also to familiarise yourself with the the most recent version of the Facebook Graph API. 
 *   **Edge Cases:** Need to check edge cases such as when there are a only a limited number of a type of post / video. Eg less than 6 videos or statics, in which case there might be an overlap in the Top 3 and Bottom 3 logic. 
@@ -157,3 +157,17 @@ This section outlines the plan for turning the tool into a commercial product.
 *   **OAuth `redirect_uri`:** This must be an *exact* match between the Meta dashboard, the dialog URL, and the token exchange URL. Be mindful of trailing slashes and `http` vs `https` (though `localhost` is a special case).
 *   **Streamlit State:** `st.session_state` is essential for persisting data (like login tokens and generated reports) across user interactions. A full browser reload will clear the state.
 *   **Environment Variables (`.env`):** Changes to the `.env` file require a full server restart to be loaded.
+
+* **Engagement by Hour of Day (Heatmap or Bar Chart)**
+Why it's useful: This directly answers the age-old question: "When is the best time for me to post?" A bar chart showing the average engagement rate for posts published at 8 AM, 9 AM, 12 PM, etc., provides a data-driven answer. A heatmap is an even more advanced version that could show Day of Week vs. Hour of Day.
+
+* **Implementation**: More complex. It requires careful grouping by the hour column in our DataFrame and calculating the average engagement for each hour, not the sum. It's a very powerful insight if done correctly.
+
+* **Reach vs. Engagement (Scatter Plot)**
+Why it's useful: This is a classic analysis chart. It helps identify content "quadrants":
+    * High Reach, High Engagement (Viral Hits): The top-right corner. These are your superstars.
+    * High Reach, Low Engagement (Wide but Shallow): Content that got seen but didn't resonate deeply.
+    * Low Reach, High Engagement (Niche Stars): Content that your core audience loved but the algorithm didn't push widely.
+    * Low Reach, Low Engagement (Misses): The bottom-left corner.
+
+* **Implementation**: Moderately complex. We would use matplotlib's scatter plot function, with reach on the x-axis and total_engagement (or engagement rate) on the y-axis. Each dot on the chart would represent a single post.

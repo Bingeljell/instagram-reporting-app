@@ -8,6 +8,8 @@ import math
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional
 from config import POSTS_PER_SLIDE
+import matplotlib.pyplot as plt
+import matplotlib.dates as mdates
 
 # PowerPoint Imports
 from pptx import Presentation
@@ -122,6 +124,7 @@ class InstagramReporter:
         # --- 3. HELPER FUNCTION for repetitive analysis ---
         # This avoids duplicating code and makes our logic cleaner.
         def get_top_bottom_posts(df_subset, metric_to_sort_by):
+
             if df_subset.empty: return pd.DataFrame(), pd.DataFrame()
 
             if metric_to_sort_by not in df_subset.columns:
@@ -129,9 +132,24 @@ class InstagramReporter:
                 metric_to_sort_by = 'reach' # Fallback to a safe default
 
             df_sorted = df_subset.sort_values(metric_to_sort_by, ascending=False)
-            return df_sorted.head(3), df_sorted.tail(3) 
 
-        # --- 4. ANALYZE EACH SEGMENT ---
+            num_posts = len(df_sorted)
+
+
+            #Edge case handling for fewer number of posts to avoid repetition of same post in top and bottom 3    
+            if num_posts <= 5: 
+                # Ceiling division for the top half to handle odd numbers graciously (e.g., 5 -> 3 top, 2 bottom)
+                split_point = (num_posts + 1) // 2
+                top_posts = df_sorted.head(split_point)
+                bottom_posts = df_sorted.tail(num_posts - split_point)
+    
+            else: 
+                top_posts = df_sorted.head(3)
+                bottom_posts = df_sorted.tail(3)
+
+            return top_posts, bottom_posts
+
+        # ANALYZE EACH SEGMENT
         top_static, bottom_static = get_top_bottom_posts(df_static, sort_metric)
         top_video, bottom_video = get_top_bottom_posts(df_video, sort_metric)
         
@@ -141,8 +159,8 @@ class InstagramReporter:
             'total_engagement', 'engagement_rate_on_reach', 'media_url', 'thumbnail_url'
         ]
         
-        # --- 5. COMPILE THE FINAL INSIGHTS DICTIONARY ---
-        # Note the new structure for top/bottom posts
+        #  COMPILE THE FINAL INSIGHTS DICTIONARY
+        
         insights = {
             'all_posts': df[columns_to_keep].to_dict('records'),
             'total_posts': len(df),
@@ -181,12 +199,12 @@ class InstagramReporter:
     def create_local_csv_report(self, insights: Dict) -> str:
         """
         Creates the CSV report content in-memory and returns it as a string.
-        This is the complete, non-truncated version.
+        
         """
         # Use an in-memory text buffer instead of a file
         string_buffer = io.StringIO()
         
-        # --- Part 1: Summary Data ---
+        # Part 1: Summary Data
         summary_data = [
             ['Metric', 'Value'],
             ['Total Posts', insights.get('total_posts', 0)],
@@ -252,7 +270,7 @@ class InstagramReporter:
         # Return the entire content of the buffer as a single string
         return string_buffer.getvalue()
 
-    def create_powerpoint_report(self, insights: Dict, title_text: str, logo_path: str) -> io.BytesIO:
+    def create_powerpoint_report(self, insights: Dict, title_text: str, logo_path: str, sort_metric_display: str) -> io.BytesIO:
         """Creates a PowerPoint presentation."""
         prs = Presentation()
         title_slide_layout = prs.slide_layouts[0]
@@ -278,14 +296,17 @@ class InstagramReporter:
         "Total Reach": f"{insights.get('total_reach', 0):,}",
         "Best Day to Post": insights.get('best_posting_day'),
         }
-        for key, value in summary_points.items():
+        for key, value in summary_points.items():  # Main summary Slide
             p = tf.add_paragraph(); p.text = f"{key}: {value}"; p.level = 1
+        
+        self._create_time_series_slide(prs, insights)
+        self._create_content_analysis_slide(prs, insights)
 
         # --- NEW: Four Collage Slides ---
-        self._add_collage_slide(prs, insights.get('top_3_static', []), "Top 3 Performing Static Posts")
-        self._add_collage_slide(prs, insights.get('top_3_video', []), "Top 3 Performing Videos/Reels")
-        self._add_collage_slide(prs, insights.get('bottom_3_static', []), "Static Posts Needing Improvement")
-        self._add_collage_slide(prs, insights.get('bottom_3_video', []), "Videos/Reels Needing Improvement")
+        self._add_collage_slide(prs, insights.get('top_3_static', []), "Top Performing Static Posts", sort_metric_display)
+        self._add_collage_slide(prs, insights.get('top_3_video', []), "Top Performing Videos/Reels", sort_metric_display)
+        self._add_collage_slide(prs, insights.get('bottom_3_static', []), "Static Posts Needing Improvement", sort_metric_display)
+        self._add_collage_slide(prs, insights.get('bottom_3_video', []), "Videos/Reels Needing Improvement", sort_metric_display)
 
         self._add_annexure_slides(prs, insights) # Adding the annexure
 
@@ -295,12 +316,22 @@ class InstagramReporter:
 
         return powerpoint_buffer
 
-    def _add_collage_slide(self, prs: Presentation, posts: List[Dict], title: str):
+    def _add_collage_slide(self, prs: Presentation, posts: List[Dict], title: str, sort_metric_display: str):
         """Helper function to add a collage slide."""
         if not posts: return
+    
+        num_posts = len(posts)
+        plural_s = "" if num_posts == 1 else "s"
+            
+        # Replace '3' with the actual number of posts
+        dynamic_base = title.replace("3", str(num_posts))
+            
+        # Construct the final title
+        final_title = f"{dynamic_base}{plural_s} (by {sort_metric_display})"
+
         slide_layout = prs.slide_layouts[1]
         slide = prs.slides.add_slide(slide_layout)
-        slide.shapes.title.text = title
+        slide.shapes.title.text = final_title
         positions = [(Inches(0.5), Inches(1.5)), (Inches(3.7), Inches(1.5)), (Inches(6.9), Inches(1.5))]
         for i, post in enumerate(posts):
             if i >= 3: break
@@ -436,7 +467,7 @@ class InstagramReporter:
         df.to_csv(string_buffer, index=False)
         return string_buffer.getvalue()
     
-    def generate_report(self, days_back: int, report_title: str, logo_path: str, sort_metric: str):
+    def generate_report(self, days_back: int, report_title: str, logo_path: str, sort_metric: str, sort_metric_display: str):
         """
         The main method to generate all reports in-memory.
         Returns:
@@ -465,10 +496,121 @@ class InstagramReporter:
         pptx_data = self.create_powerpoint_report(
             insights=insights, 
             title_text=report_title, 
-            logo_path=logo_path
+            logo_path=logo_path,
+            sort_metric_display=sort_metric_display
         )
         
         print("\n✅ All reports generated successfully in memory.")
         
         # Return the data objects for the Streamlit app to handle
         return summary_csv_data, raw_data_csv, pptx_data
+
+
+
+    def _create_time_series_slide(self, prs: Presentation, insights: Dict):
+        """Creates a slide with time-series charts: Likes per Day and Reach per Day."""
+        slide = prs.slides.add_slide(prs.slide_layouts[5])
+        slide.shapes.title.text = "Performance Over Time"
+
+        all_posts = insights.get('all_posts', [])
+        if not all_posts:
+            return
+
+        df = pd.DataFrame(all_posts)
+        df['date'] = pd.to_datetime(df['timestamp']).dt.date
+
+        # --- Chart 1: Likes per Day (Left Side) ---
+        try:
+            likes_per_day = df.groupby('date')['like_count'].sum()
+            fig, ax = plt.subplots()
+            ax.plot(likes_per_day.index, likes_per_day.values, marker='o', linestyle='-', color='#8884d8')
+            ax.set_ylabel('Total Likes')
+            ax.set_title('Likes per Day')
+            ax.grid(True, linestyle='--', alpha=0.6)
+            
+            locator = mdates.AutoDateLocator(minticks=4, maxticks=8)
+            formatter = mdates.ConciseDateFormatter(locator)
+            ax.xaxis.set_major_locator(locator)
+            ax.xaxis.set_major_formatter(formatter)
+            
+            chart_buffer = io.BytesIO()
+            plt.savefig(chart_buffer, format='png', bbox_inches='tight')
+            plt.close(fig)
+            chart_buffer.seek(0)
+            slide.shapes.add_picture(chart_buffer, Inches(0.5), Inches(1.5), width=Inches(4.5))
+        except Exception as e:
+            print(f"⚠️  Could not generate 'Likes per Day' chart. Reason: {e}")
+
+        # --- Chart 2: Reach per Day (Right Side) ---
+        try:
+            reach_per_day = df.groupby('date')['reach'].sum()
+            fig, ax = plt.subplots()
+            ax.plot(reach_per_day.index, reach_per_day.values, marker='o', linestyle='-', color='#82ca9d')
+            ax.set_ylabel('Total Reach')
+            ax.set_title('Reach per Day')
+            ax.grid(True, linestyle='--', alpha=0.6)
+
+            locator = mdates.AutoDateLocator(minticks=4, maxticks=8)
+            formatter = mdates.ConciseDateFormatter(locator)
+            ax.xaxis.set_major_locator(locator)
+            ax.xaxis.set_major_formatter(formatter)
+            
+            chart_buffer = io.BytesIO()
+            plt.savefig(chart_buffer, format='png', bbox_inches='tight')
+            plt.close(fig)
+            chart_buffer.seek(0)
+            slide.shapes.add_picture(chart_buffer, Inches(5.5), Inches(1.5), width=Inches(4.5))
+        except Exception as e:
+            print(f"⚠️  Could not generate 'Reach per Day' chart. Reason: {e}")
+
+    def _create_content_analysis_slide(self, prs: Presentation, insights: Dict):
+        """Creates a slide with content analysis charts: Engagement by Type and Format Mix."""
+        slide = prs.slides.add_slide(prs.slide_layouts[5])
+        slide.shapes.title.text = "Content Strategy Analysis"
+
+        # --- Chart 1: Engagement Rate by Content Type (Left Side) ---
+        try:
+            content_performance = insights.get('content_type_performance', {})
+            static_count = insights.get('total_static_posts', 0)
+            video_count = insights.get('total_video_posts', 0)
+            labels = {'Static': f"Static\n(n={static_count})", 'Video': f"Video\n(n={video_count})"}
+            types = list(labels.values())
+            rates = [round(r, 2) for r in content_performance.values()]
+
+            fig, ax = plt.subplots()
+            bars = ax.bar(types, rates, color=['#8884d8', '#82ca9d'])
+            ax.set_ylabel('Average Engagement Rate (%)')
+            ax.set_title('Engagement Rate by Content Type')
+            ax.set_ylim(0, max(rates) * 1.2 if rates else 1)
+            for bar in bars:
+                yval = bar.get_height()
+                plt.text(bar.get_x() + bar.get_width()/2.0, yval, f'{yval}%', va='bottom', ha='center')
+            
+            chart_buffer = io.BytesIO()
+            plt.savefig(chart_buffer, format='png', bbox_inches='tight')
+            plt.close(fig)
+            chart_buffer.seek(0)
+            slide.shapes.add_picture(chart_buffer, Inches(0.5), Inches(1.5), width=Inches(4.5))
+        except Exception as e:
+            print(f"⚠️  Could not generate 'Engagement by Type' chart. Reason: {e}")
+
+        # --- Chart 2: Content Format Mix (Right Side) ---
+        try:
+            all_posts = insights.get('all_posts', [])
+            if all_posts:
+                df = pd.DataFrame(all_posts)
+                format_counts = df['media_type'].value_counts()
+                
+                fig, ax = plt.subplots()
+                ax.pie(format_counts, labels=format_counts.index, autopct='%1.1f%%',
+                       startangle=90, colors=['#ffc658', '#00C49F', '#FF8042'])
+                ax.axis('equal') # Equal aspect ratio ensures that pie is drawn as a circle.
+                ax.set_title('Content Format Mix')
+                
+                chart_buffer = io.BytesIO()
+                plt.savefig(chart_buffer, format='png', bbox_inches='tight')
+                plt.close(fig)
+                chart_buffer.seek(0)
+                slide.shapes.add_picture(chart_buffer, Inches(5.5), Inches(1.5), width=Inches(4.0))
+        except Exception as e:
+            print(f"⚠️  Could not generate 'Content Format Mix' chart. Reason: {e}")

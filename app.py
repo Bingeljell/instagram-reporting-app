@@ -161,123 +161,126 @@ else:
         if selected_page_display:
             selected_page_id = page_options[selected_page_display]
 
-            # --- THE REPORT FORM ---
-            with st.form(key="report_form"):
-                st.header("Step 1: Configure Your Report")
-                
-                col1, col2 = st.columns(2)
-                with col1:
-                    start_date = st.date_input("Start Date", value=datetime.now() - timedelta(days=30))
-                with col2:
-                    end_date = st.date_input("End Date", value=datetime.now())
-                
-                report_title = st.text_input("Report Title", value=f"{selected_page_display} Performance Report")
-                output_filename = st.text_input("Output Filename", value=f"{selected_page_display.split(' (@')[0]}_Report_{datetime.now().strftime('%Y-%m')}")
-                logo_file = st.file_uploader("Upload a Logo (Optional)", type=['png', 'jpg', 'jpeg'])
+            if 'report_ready' not in st.session_state:
 
-                sort_options = {
-                    "Engagement Rate": "engagement_rate_on_reach",
-                    "Reach": "reach",
-                    "Likes": "like_count",
-                    "Comments": "comments_count",
-                    "Saves": "saved",
-                    "Views (for Videos)": "views"
-                }
-                sort_by_display = st.selectbox(
-                    "Rank Top/Bottom posts by:",
-                    options=sort_options.keys()
-                )
-                
-                submitted = st.form_submit_button("Generate Report 🚀")
-
-            # --- VALIDATION AND GENERATION LOGIC ---
-            # This now happens AFTER the form is submitted
-            if submitted:
-                # 1. Perform the validation check first
-                days_diff = (end_date - start_date).days
-                is_date_range_valid = True
-
-                if days_diff < 1:
-                    st.error("Error: The start date must be before the end date.")
-                    is_date_range_valid = False
-                elif days_diff > MAX_DAYS_RANGE:
-                    st.error(f"Error: Please select a date range of {MAX_DAYS_RANGE} days or less. The current range is {days_diff} days.")
-                    is_date_range_valid = False
-                
-                # 2. Only proceed if the validation passes
-                if is_date_range_valid:
-                    if 'report_ready' in st.session_state:
-                        del st.session_state['report_ready']
+                # --- THE REPORT FORM ---
+                with st.form(key="report_form"):
+                    st.header("Step 1: Configure Your Report")
                     
-                    with st.spinner("Generating... This may take a moment..."):
-                        try:
-                            # ... (The entire logic for creating the reporter and generating the files) ...
-                            
-                            logo_path = None
-                            with tempfile.TemporaryDirectory() as temp_dir:
-                                if logo_file:
-                                    logo_path = os.path.join(temp_dir, logo_file.name)
-                                    with open(logo_path, "wb") as f: f.write(logo_file.getbuffer())
-                                
-                                sort_by_value = sort_options[sort_by_display]
-                                
-                                reporter = InstagramReporter(st.session_state['access_token'], selected_page_id)
-                                summary_csv, raw_csv, pptx_data = reporter.generate_report(
-                                    days_back=days_diff, # Use the already calculated days_diff
-                                    report_title=report_title,
-                                    logo_path=logo_path,
-                                    sort_metric=sort_by_value
-                                )
-                                st.session_state['summary_csv_data'] = summary_csv
-                                st.session_state['raw_csv_data'] = raw_csv
-                                st.session_state['pptx_report_data'] = pptx_data
-                                st.session_state['filename'] = output_filename
-                                st.session_state['report_ready'] = True
-                        except Exception as e:
-                            import traceback
-                            # First, print the full, detailed error to the terminal
-                            print("--- DETAILED ERROR TRACEBACK ---")
-                            traceback.print_exc()
-                            print("---------------------------------")
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        start_date = st.date_input("Start Date", value=datetime.now() - timedelta(days=30))
+                    with col2:
+                        end_date = st.date_input("End Date", value=datetime.now())
+                    
+                    report_title = st.text_input("Report Title", value=f"{selected_page_display} Performance Report")
+                    output_filename = st.text_input("Output Filename", value=f"{selected_page_display.split(' (@')[0]}_Report_{datetime.now().strftime('%Y-%m')}")
+                    logo_file = st.file_uploader("Upload a Logo (Optional)", type=['png', 'jpg', 'jpeg'])
+
+                    sort_options = {
+                        "Engagement Rate": "engagement_rate_on_reach",
+                        "Reach": "reach",
+                        "Likes": "like_count",
+                        "Comments": "comments_count",
+                        "Saves": "saved",
+                        "Views (for Videos)": "views"
+                    }
+                    sort_by_display = st.selectbox(
+                        "Rank Top/Bottom posts by:",
+                        options=sort_options.keys()
+                    )
+                    
+                    submitted = st.form_submit_button("Generate Report 🚀")
+
+                # --- VALIDATION AND GENERATION LOGIC ---
+                # This now happens AFTER the form is submitted
+                if submitted:
+                    # 1. Perform the validation check first
+                    days_diff = (end_date - start_date).days
+                    is_date_range_valid = True
+
+                    if days_diff < 1:
+                        st.error("Error: The start date must be before the end date.")
+                        is_date_range_valid = False
+                    elif days_diff > MAX_DAYS_RANGE:
+                        st.error(f"Error: Please select a date range of {MAX_DAYS_RANGE} days or less. The current range is {days_diff} days.")
+                        is_date_range_valid = False
+                    
+                    # 2. Only proceed if the validation passes
+                    if is_date_range_valid:
+                        if 'report_ready' in st.session_state:
+                            del st.session_state['report_ready']
                         
-                            # Then, show a user-friendly message on the webpage
-                            st.error(f"An error occurred during report generation. Please check the terminal for details. Error: {e}")
-                        # ----------------------------------------------
-                    
-                    # Rerun to display the download buttons
-                    st.rerun()
+                        with st.spinner("Generating... This may take a moment..."):
+                            try:
+                                # ... (The entire logic for creating the reporter and generating the files) ...
+                                
+                                logo_path = None
+                                with tempfile.TemporaryDirectory() as temp_dir:
+                                    if logo_file:
+                                        logo_path = os.path.join(temp_dir, logo_file.name)
+                                        with open(logo_path, "wb") as f: f.write(logo_file.getbuffer())
+                                    
+                                    sort_by_value = sort_options[sort_by_display]
+                                    
+                                    reporter = InstagramReporter(st.session_state['access_token'], selected_page_id)
+                                    summary_csv, raw_csv, pptx_data = reporter.generate_report(
+                                        days_back=days_diff, # Use the already calculated days_diff
+                                        report_title=report_title,
+                                        logo_path=logo_path,
+                                        sort_metric=sort_by_value,
+                                        sort_metric_display=sort_by_display
+                                    )
+                                    st.session_state['summary_csv_data'] = summary_csv
+                                    st.session_state['raw_csv_data'] = raw_csv
+                                    st.session_state['pptx_report_data'] = pptx_data
+                                    st.session_state['filename'] = output_filename
+                                    st.session_state['report_ready'] = True
+                            except Exception as e:
+                                import traceback
+                                # First, print the full, detailed error to the terminal
+                                print("--- DETAILED ERROR TRACEBACK ---")
+                                traceback.print_exc()
+                                print("---------------------------------")
+                            
+                                # Then, show a user-friendly message on the webpage
+                                st.error(f"An error occurred during report generation. Please check the terminal for details. Error: {e}")
+                            # ----------------------------------------------
+                        
+                        # Rerun to display the download buttons
+                        st.rerun()
 
-    if 'report_ready' in st.session_state:
-        st.divider()
-        st.header("Step 2: Download Your Reports")
-        
-        # Use three columns for a clean layout
-        dl_col1, dl_col2, dl_col3 = st.columns(3)
-        with dl_col1:
-            st.download_button(
-                "📥 Download PowerPoint", 
-                st.session_state['pptx_report_data'], 
-                f"{st.session_state['filename']}.pptx"
-            )
-        with dl_col2:
-            st.download_button(
-                "📥 Download Summary CSV", 
-                st.session_state['summary_csv_data'], 
-                f"{st.session_state['filename']}_Summary.csv"
-            )
-        with dl_col3:
-            st.download_button(
-                "📥 Download Raw Data CSV", 
-                st.session_state['raw_csv_data'], 
-                f"{st.session_state['filename']}_RawData.csv"
-            )
-        
-        if st.button("Generate Another Report"):
-            keys_to_keep = ['access_token', 'user_name', 'user_picture', 'user_pages']
-            for key in list(st.session_state.keys()):
-                if key not in keys_to_keep:
-                    del st.session_state[key]
-            st.rerun()
+        if 'report_ready' in st.session_state:
+            st.divider()
+            st.header("Step 2: Download Your Reports")
+            
+            # Use three columns for a clean layout
+            dl_col1, dl_col2, dl_col3 = st.columns(3)
+            with dl_col1:
+                st.download_button(
+                    "📥 Download PowerPoint", 
+                    st.session_state['pptx_report_data'], 
+                    f"{st.session_state['filename']}.pptx"
+                )
+            with dl_col2:
+                st.download_button(
+                    "📥 Download Summary CSV", 
+                    st.session_state['summary_csv_data'], 
+                    f"{st.session_state['filename']}_Summary.csv"
+                )
+            with dl_col3:
+                st.download_button(
+                    "📥 Download Raw Data CSV", 
+                    st.session_state['raw_csv_data'], 
+                    f"{st.session_state['filename']}_RawData.csv"
+                )
+            
+            if st.button("Generate Another Report"):
+                keys_to_keep = ['access_token', 'user_name', 'user_picture', 'user_pages']
+                for key in list(st.session_state.keys()):
+                    if key not in keys_to_keep:
+                        del st.session_state[key]
+                st.rerun()
 
     st.divider()
     if st.button("Logout"):
