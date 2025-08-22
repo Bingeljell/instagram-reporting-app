@@ -7,6 +7,8 @@ from datetime import datetime, timedelta
 from dotenv import load_dotenv
 import requests
 
+from logger_config import logger, analytics_logger
+
 from instagram_reporter import InstagramReporter
 from config import DEFAULT_API_VERSION, FACEBOOK_GRAPH_URL, MAX_DAYS_RANGE
 
@@ -29,8 +31,8 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-APP_ID = os.getenv("META_APP_ID")
-APP_SECRET = os.getenv("META_APP_SECRET")
+APP_ID = st.secrets.get("META_APP_ID", os.getenv("META_APP_ID"))
+APP_SECRET = st.secrets.get("META_APP_SECRET", os.getenv("META_APP_SECRET"))
 BASE_REDIRECT_URI = "http://localhost:8501/"
 
 # --- 2. AUTHENTICATION LOGIC ---
@@ -144,6 +146,28 @@ else:
             st.image(st.session_state['user_picture'])
     
     st.divider()
+
+    if 'generation_error' in st.session_state:
+        st.error(st.session_state.generation_error)
+        # Clear the error after displaying it so it doesn't stick around forever
+        del st.session_state['generation_error']
+    
+    # --- Rate Limiting Logic Tryhards ---
+    # Initialize the report history in the session state if it doesn't exist
+    if 'report_timestamps' not in st.session_state:
+        st.session_state.report_timestamps = []
+    
+    # Filter out timestamps older than an hour ago
+    one_hour_ago = datetime.now() - timedelta(hours=1)
+    st.session_state.report_timestamps = [
+        ts for ts in st.session_state.report_timestamps if ts > one_hour_ago
+    ]
+    
+    REPORTS_PER_HOUR_LIMIT = 5
+    can_generate_report = len(st.session_state.report_timestamps) < REPORTS_PER_HOUR_LIMIT
+    
+    if not can_generate_report:
+        st.warning(f"You have reached the limit of {REPORTS_PER_HOUR_LIMIT} reports per hour. Please try again later.")
     
     pages = st.session_state.get('user_pages', [])
     if not pages:
@@ -190,7 +214,10 @@ else:
                         options=sort_options.keys()
                     )
                     
-                    submitted = st.form_submit_button("Generate Report 🚀")
+                    submitted = st.form_submit_button(
+                        "Generate Report 🚀",
+                        disabled=not can_generate_report #Rate Limiting folks
+                    )
 
                 # --- VALIDATION AND GENERATION LOGIC ---
                 # This now happens AFTER the form is submitted
@@ -225,7 +252,8 @@ else:
                                     
                                     reporter = InstagramReporter(st.session_state['access_token'], selected_page_id)
                                     summary_csv, raw_csv, pptx_data = reporter.generate_report(
-                                        days_back=days_diff, # Use the already calculated days_diff
+                                        start_date=start_date, 
+                                        end_date=end_date,
                                         report_title=report_title,
                                         logo_path=logo_path,
                                         sort_metric=sort_by_value,
@@ -236,18 +264,22 @@ else:
                                     st.session_state['pptx_report_data'] = pptx_data
                                     st.session_state['filename'] = output_filename
                                     st.session_state['report_ready'] = True
+
+
                             except Exception as e:
-                                import traceback
-                                # First, print the full, detailed error to the terminal
-                                print("--- DETAILED ERROR TRACEBACK ---")
-                                traceback.print_exc()
-                                print("---------------------------------")
-                            
+                                # Log the full traceback to the file and console
+                                logger.error("Report generation failed.", exc_info=True)
+                                st.session_state['generation_error'] = f"An error occurred: {e}"
                                 # Then, show a user-friendly message on the webpage
-                                st.error(f"An error occurred during report generation. Please check the terminal for details. Error: {e}")
-                            # ----------------------------------------------
+                                st.error(f"An error occurred during report generation. The issue has been logged, please contact Support.")
+                        
+                        # --- Log the successful event and Janky Analytics ---
+                        user_name = st.session_state.get('user_name', 'UnknownUser')
+                        page_name = selected_page_display.split(' (@')[0]
+                        analytics_logger.info(f"{user_name},{page_name},{days_diff}")
                         
                         # Rerun to display the download buttons
+                        st.session_state.report_timestamps.append(datetime.now())
                         st.rerun()
 
         if 'report_ready' in st.session_state:

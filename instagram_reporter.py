@@ -43,25 +43,24 @@ class InstagramReporter:
             print(f"Error getting Instagram account ID: {e}")
             return None
 
-    def get_posts_data(self, days_back: int) -> List[Dict]:
+    def get_posts_data(self, start_date: datetime, end_date: datetime) -> List[Dict]:
         """Fetch Instagram posts from the last specified number of days."""
         ig_account_id = self.get_instagram_account_id()
         if not ig_account_id:
             return []
-        
-        end_date = datetime.now()
-        start_date = end_date - timedelta(days=days_back)
+        start_datetime = datetime.combine(start_date, datetime.min.time())
+        end_datetime = datetime.combine(end_date, datetime.max.time())
         
         url = f"{self.base_url}/{ig_account_id}/media"
         fields_to_request = (
             'id,caption,media_type,media_url,permalink,timestamp,like_count,comments_count,thumbnail_url,'
             'children{media_url,media_type},'
-            'insights.metric(reach,saved,views)' # REMOVED: impressions, video_views. ADDED: views.
+            'insights.metric(reach,saved,views)' 
         )
         params = {
             'fields': fields_to_request,
-            'since': int(start_date.timestamp()),
-            'until': int(end_date.timestamp()),
+            'since': int(start_datetime.timestamp()),
+            'until': int(end_datetime.timestamp()),
             'access_token': self.access_token,
             'limit': 100
         }
@@ -98,8 +97,7 @@ class InstagramReporter:
             return {}
 
         df = pd.DataFrame(posts)
-        print(f"📋 Raw data fields available: {list(df.columns)}")
-
+        
         # --- 1. DATA CLEANING & PREPARATION (Same as before) ---
         df['timestamp'] = pd.to_datetime(df['timestamp'])
         df['date'] = df['timestamp'].dt.date
@@ -128,7 +126,6 @@ class InstagramReporter:
             if df_subset.empty: return pd.DataFrame(), pd.DataFrame()
 
             if metric_to_sort_by not in df_subset.columns:
-                print(f"⚠️  Warning: Sort metric '{metric_to_sort_by}' not found in subset. Defaulting to 'reach'.")
                 metric_to_sort_by = 'reach' # Fallback to a safe default
 
             df_sorted = df_subset.sort_values(metric_to_sort_by, ascending=False)
@@ -467,19 +464,21 @@ class InstagramReporter:
         df.to_csv(string_buffer, index=False)
         return string_buffer.getvalue()
     
-    def generate_report(self, days_back: int, report_title: str, logo_path: str, sort_metric: str, sort_metric_display: str):
+    def generate_report(self, start_date: datetime.date, end_date: datetime.date, report_title: str, logo_path: str, sort_metric: str, sort_metric_display: str):
         """
         The main method to generate all reports in-memory.
         Returns:
             A tuple containing the CSV data (as a string) and the PowerPoint data (as a BytesIO object).
         """
         print("📱 Fetching Instagram posts...")
-        posts = self.get_posts_data(days_back)
+        
+        posts = self.get_posts_data(start_date, end_date)
         if not posts:
             # For Streamlit, it's better to raise an error that the app can catch and display.
             raise ValueError("No posts were found for the selected date range. Please try a different range.")
 
         print(f"✅ Found {len(posts)} posts.")
+
         print("📊 Analyzing post performance...")
 
         insights = self.analyze_posts(posts, sort_metric=sort_metric)
