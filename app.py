@@ -134,6 +134,17 @@ if 'access_token' not in st.session_state:
     
     
     st.divider()
+
+    with st.expander("🔑 Read this before you connect"):
+        st.write("""
+            For a successful connection, please ensure you meet the following requirements:
+            
+            - **Log in with the right Facebook Profile.** You must log in with the personal Facebook account that has been granted "Admin" access to the Facebook Page.
+            - **Your Instagram account must be a Business or Creator account.** Personal Instagram accounts cannot be accessed via the API.
+            - **Your Instagram account must be correctly linked to the Facebook Page.** You can check this in your Facebook Page's settings under "Linked Accounts."
+            - **Grant all requested permissions.** When the Facebook login window appears, you must approve all the requested permissions for the app to function correctly.
+            - **Select the Pages & Accounts.** The app will show you your Facebook accounts and the linked IG accounts. Please select the relevent ones so you can generate reports for them. 
+        """)
     
     with st.expander("🔒 How we handle your data and security"):
         st.write("""

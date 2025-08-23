@@ -14,6 +14,7 @@ __pycache__/
 
 # Logs
 *.log
+Steamlit logs/
 
 # IDE and OS files
 .vscode/
