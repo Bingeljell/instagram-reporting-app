@@ -1,120 +1,119 @@
 # Project Plan: Instagram Reporter SaaS
 
-## 1. Vision & Executive Summary
+## 1. Vision & Strategy
 
 **Product Vision:** To create a simple, elegant, and powerful SaaS tool that allows social media managers, freelancers, and small agencies to generate beautiful, insightful Instagram performance reports with just a few clicks.
 
-**Core Problem:** Existing social media tools are often bloated, complex, and expensive all-in-one suites. Users who only need high-quality reporting are forced to adopt complicated workflows.
+**Core Problem:** Existing social media tools are often bloated, complex, and expensive all-in-one suites. Users who only need high-quality reporting are forced to adopt complicated and inefficient workflows.
 
-**Our Solution:** A focused application that does one thing exceptionally well: generating customizable, visually appealing reports (CSV and PowerPoint) from Instagram data. The primary goal is to provide a seamless, user-friendly experience that saves time and delivers immediate value.
+**Our Solution:** A focused web application that does one thing exceptionally well: generating customizable, visually appealing reports. The primary goal is to provide a seamless user experience that saves time and delivers immediate, actionable value.
 
-## 2. Core Strategy & Competitive Advantage
-
-*   **Methodology:** We will follow a **Lean Startup / MVP (Minimum Viable Product)** approach. The strategy is to build the simplest valuable version of the product first, get it into the hands of real users to gather feedback, and iterate based on that feedback. We will prioritize functionality over perfection in the early stages.
-*   **Target Audience:**
-    *   Freelance Social Media Managers
-    *   Small Marketing Agencies
-    *   In-house Marketers at Small to Medium Businesses
-*   **Competitive Advantage (USP):**
-    *   **Simplicity:** A clean, intuitive interface with no unnecessary features like post scheduling or inbox management.
-    *   **Focus on Reporting:** Our core focus is on creating the best possible reporting experience.
-    *   **Speed:** From login to a downloaded report in under a minute.
-
-## 3. Development Roadmap
-
-The project will be developed in three distinct phases, moving from a local tool to a fully-fledged, secure, and deployable web application.
+**Methodology:** We are following a **Lean Startup / MVP (Minimum Viable Product)** approach. The strategy is to build, deploy, and test the core product with a small group of users, gather feedback, and iterate based on real-world usage.
 
 ---
 
-### **Phase 1: The Interactive UI (MVP)**
+## 2. Project Status & Completed Milestones
 
-### **Phase 1: The Interactive UI (MVP) - ✅ COMPLETE**
+We have successfully completed the initial development and deployment of a fully functional MVP.
 
-*   **Goal:** Transform the command-line script into a user-friendly, interactive web application.
-*   **Status:** **Completed.** The application now runs locally with a full user interface.
-*   **Key Features / Tasks:**
-    *   `[x]` Create `app.py` for the Streamlit front-end.
-    *   `[x]` Implement UI components (date pickers, text inputs, file uploader).
-    *   `[x]` Integrate the front-end with the `InstagramReporter` class.
-    *   `[x]` Use `st.spinner` for progress indication.
-    *   `[x]` Generate files in-memory and serve them via `st.download_button`.
-    *   `[x]` Implement robust state management with `st.session_state`.
+### **Phase 1: Interactive UI - ✅ COMPLETE**
+*   Transformed the original Python script into an interactive web application using Streamlit.
+*   Implemented a full user interface with date selectors, text inputs, and a logo uploader.
+*   Engineered the backend to generate reports (PowerPoint, Summary CSV, Raw Data CSV) in-memory.
+*   Implemented robust state management (`st.session_state`) for a smooth user experience.
 
-*   **Technology Stack:**
-    *   **UI Framework:** Streamlit
-    *   **Backend Logic:** Our existing `instagram_reporter.py` engine.
-    *   **Dependencies:** `python-pptx`, `pandas`, `requests`, `python-dotenv`
+### **Phase 2: Secure Multi-User Authentication - ✅ COMPLETE**
+*   Implemented the industry-standard **OAuth 2.0 "Login with Facebook" flow**.
+*   Eliminated the need for end-users to manage secret `.env` files.
+*   The application now securely fetches an access token for each user's session.
+*   The UI dynamically fetches and displays a filtered list of the user's eligible Instagram Business Accounts.
+
+### **Feature Sprint: Reporting Engine Polish - ✅ COMPLETE**
+*   **Enhanced Logic:**
+    *   Segregated report analysis by content type (Static vs. Video).
+    *   Implemented user-selectable sorting for Top/Bottom posts based on various metrics (Reach, Likes, etc.).
+    *   Added adaptive logic to handle edge cases for small datasets to prevent post overlap in Top/Bottom lists.
+*   **Richer Outputs:**
+    *   Upgraded reports to include modern API metrics (e.g., `views`).
+    *   Added a paginated, multi-slide annexure with clickable links to the PowerPoint.
+    *   Added a full, raw data export CSV for all posts in the period.
+*   **Visualizations:**
+    *   Added a "Performance Over Time" slide with Likes per Day and Reach per Day line charts.
+    *   Added a "Content Strategy Analysis" slide comparing Engagement Rate by Type (bar chart) and Content Format Mix (pie chart).
+*   **Stability & UX:**
+    *   Implemented a date range limit and user-level rate limiting.
+    *   Added robust, persistent error handling and user-facing instructions.
+    *   Implemented a centralized logging system for errors (`app.log`) and usage analytics (`analytics.log`).
+
+### **Phase 3: Deployment - ✅ COMPLETE**
+*   Set up a version-controlled workflow using Git and a public GitHub repository.
+*   Successfully deployed the application to **Streamlit Community Cloud**.
+*   Configured the live application with production secrets and the correct OAuth Redirect URI.
+*   The application is now live and accessible for internal testing.
 
 ---
 
-### **Phase 2: Secure Multi-User Authentication**
+## 3. Immediate Next Steps & Roadmap
 
-*   **Goal:** Eliminate the need for `.env` files and manual token management. Allow any team member to securely connect their own Instagram accounts.
-*   **User Experience:** A new user is greeted with a "Login with Facebook" button. They go through the standard Facebook permission flow and are then presented with a dropdown list of the Instagram accounts they manage.
-*   **Key Features / Tasks:**
-    *   **Key Features / Tasks:**
-    *   `[x]` Configure "Facebook Login" in the Meta Developer App.
-    *   `[x]` Implement the full OAuth 2.0 Flow.
-    *   `[x]` Use `st.session_state` to manage temporary user sessions and tokens.
-    *   `[x]` Dynamically fetch and display a filtered list of the user's eligible pages.
+With the MVP deployed, the immediate focus shifts to gathering feedback and planning the next iteration.
 
-*   **Technology Stack:**
-    *   **Authentication:** Facebook Graph API (OAuth 2.0)
-    *   **Python Libraries:** `requests-oauthlib` (or similar) to manage the OAuth flow.
-    *   **Session Management:** Streamlit `session_state`.
+### **1. Alpha Testing (Current Step)**
+*   **Goal:** Share the live application URL with the internal team and trusted "alpha" testers.
+*   **Action:**
+    *   Add team members as "Testers" in the Meta App dashboard.
+    *   Provide them with the app URL and ask for structured feedback.
+    *   Monitor the `app.log` for any hidden errors and `analytics.log` to observe usage patterns.
+
+### **2. Future Sprints & Feature Backlog**
+
+This backlog will be prioritized based on feedback from the alpha testing phase.
+
+*   **UI/UX Overhaul:**
+    *   A full visual redesign of the Streamlit app based on user feedback.
+    *   Potential migration to a more customizable front-end framework if needed.
+
+*   **Reporting Engine Enhancements:**
+    *   **"Key Insights" Slide:** Implement a slide that uses logic (or a future LLM integration) to generate automated text summaries (e.g., "Video posts performed 35% better this month.").
+    *   **Advanced Visualizations:** Add more charts like an Engagement by Hour of Day heatmap or a Reach vs. Engagement scatter plot.
+    *   **Historical Comparison:** Add the ability to compare the selected date range to the previous period.
+
+*   **New Core Features:**
+    *   **Facebook Page Reports:** Expand the reporting engine to generate performance reports for Facebook Pages.
+    *   **Report Customization:** Allow users to toggle sections of the report on/off.
+
+*   **Transition to a Commercial Product (SaaS Features):**
+    *   **App Review:** Submit the Meta App for review to get "Advanced Access" and move it to "Live" mode, allowing the general public to log in.
+    *   **Persistent User Accounts:** Implement a database (`PostgreSQL`) to manage user accounts, subscriptions, and securely store encrypted long-lived tokens.
+    *   **Billing Integration:** Integrate a payment provider like `Stripe`.
+    *   **Background Jobs:** Move report generation to a background worker queue (`Celery` with `Redis`) to handle long-running reports without timing out the web app.
+    *   **Centralized Logging:** Integrate a third-party logging service (e.g., Sentry, Logtail) for permanent, searchable logs.
 
 ---
 
-### **Phase 3: Deployment & Go-Live**
-
-*   **Goal:** Make the application accessible to the entire team (and future customers) via a simple URL, without requiring any local installation.
-*   **User Experience:** The user navigates to `your-app-name.streamlit.app` in their browser and uses the live application.
-*   **Key Features / Tasks:**
-    1.  Set up a GitHub repository for the project code. - Done
-    2.  Create a `requirements.txt` file listing all project dependencies.
-    3.  Use Streamlit Community Cloud's built-in secrets management for server-side credentials (like the Meta App ID and Secret).
-    4.  Deploy the application from the GitHub repository to Streamlit Community Cloud.
-*   **Technology Stack:**
-    *   **Hosting Platform:** Streamlit Community Cloud
-    *   **Version Control:** Git & GitHub
-
-
-### **Current Status**
-
-*   **Goal:** Enhance the quality, detail, and flexibility of the generated reports.
-*   **Status:** In Progress.
-
-### **Sprint 1: The Foundation (Core Logic & Safety) - ✅ COMPLETE**
-1.  `[x]` Implement a date range limit to ensure app stability.
-2.  `[x]` Segregate report analysis by content type (Static vs. Video).
-3.  `[x]` Implement user-selectable sorting for Top/Bottom posts.
-
-### **Sprint 2: Enhancing the Outputs - ✅ COMPLETE**
-1.  `[x]` Add a full, raw data export CSV of all posts.
-2.  `[x]` Add a comprehensive, paginated annexure to the PowerPoint report.
-3.  `[x]` Enhance reports to include more granular metrics (Likes, Comments, Saves, Views).
-
-### **Sprint 3: The "Wow" Factor (Visualizations) - ⏳ NEXT UP**
-1.  `[ ]` Add charts and graphs (e.g., "Engagement by Content Type") to the PowerPoint summary.
-2.  `[ ]` Create an automated "Key Insights" slide.
-
-## 3c. Future Enhancements & Backlog
-
-This section documents ideas and edge cases to be addressed in future sprints, after the core MVP is complete.
-
-*   **UI/UX Overhaul:** A full visual redesign of the Streamlit app after initial user feedback is gathered.
-*   **Edge Case Handling:**
-    *   Implement smarter logic for Top/Bottom post selection when the dataset is small (<=6 posts) to prevent overlap.
-*   **New Features:**
-    *   **Facebook Page Reports:** Expand the reporting engine to generate performance reports for Facebook Pages, not just Instagram.
-    *   **Report Customization:** Allow users to toggle sections of the report on/off (e.g., "I don't need the annexure slide").
-    *   **Historical Comparison:** Add logic to compare the current period's performance against the previous period.
-*   **SaaS Features:**
-    *   Implement user account management with a persistent database.
-    *   Integrate a billing provider like Stripe.
 ---
 
-## 4. SaaS Architecture & Monetization
+## 4. Key Learnings & Technical Notes
+
+This section summarizes critical technical lessons learned during the MVP development.
+
+*   **API Best Practices:**
+    *   The Instagram Graph API's primary access point is through a linked Facebook Page.
+    *   Always verify the latest API version and check for deprecated metrics (e.g., `impressions` was replaced by `views`). Use Google searches to confirm current metric status or updates to the API Graph. 
+    *   High-value permissions like `instagram_manage_insights` are critical for data access and must be explicitly re-authorized by the user if changed or missed.
+
+*   **OAuth & Security:**
+    *   The `redirect_uri` for OAuth 2.0 must be an *exact string match* between the Meta dashboard and the application's code for both the dialog and token exchange steps.
+    *   `localhost` is a special case for development, but the live URL is required for a deployed application's configuration.
+    *   For a deployed app, secrets (`META_APP_ID`, etc.) must be managed via the hosting platform's secrets manager, not in the Git repository.
+
+*   **Streamlit Development:**
+    *   `st.session_state` is the correct and essential tool for managing user state (like login tokens and generated data) across interactions.
+    *   A full browser reload will clear the `st.session_state`. This is expected behavior.
+    *   Changes to external configuration files like `.env` or secrets require a full server restart to be loaded by the application. The developer menu's "Clear cache" is the best way to reset state locally.
+
+---
+
+## 5. SaaS Architecture & Monetization
 
 This section outlines the plan for turning the tool into a commercial product.
 
@@ -138,7 +137,7 @@ This section outlines the plan for turning the tool into a commercial product.
 3.  **Public Beta:** Launch on platforms like Product Hunt and Indie Hackers. Offer an early-bird discount.
 4.  **Iterate:** Use feedback from the first paying customers to guide all future development and feature prioritization.
 
-## 5. Consolidated Technology Stack
+## 6. Consolidated Technology Stack
 
 *   **Language:** Python 3.x
 *   **Web Framework:** Streamlit
@@ -148,26 +147,3 @@ This section outlines the plan for turning the tool into a commercial product.
 *   **Configuration:** python-dotenv
 *   **Deployment:** Streamlit Community Cloud, GitHub
 *   **Future SaaS Stack:** PostgreSQL, Redis, Celery, Stripe
-
-## 6. Notes, Features to add and Learnings
-
-*   **Facebook Graph API:** Recommend a quick Google search to get up to date on the latest changes to the Facebook Graph API - especially with regards to depricated metrics such as video_views and impressions which have been replaced by just 'views'. Also to familiarise yourself with the the most recent version of the Facebook Graph API. 
-*   **Edge Cases:** Need to check edge cases such as when there are a only a limited number of a type of post / video. Eg less than 6 videos or statics, in which case there might be an overlap in the Top 3 and Bottom 3 logic. 
-*   **Facebook Graph API:** Always verify the latest API version and check for deprecated metrics (e.g., `impressions`, `video_views` were replaced by `views`). The API permissions, especially `instagram_manage_insights`, are critical and must be explicitly re-authorized if changed.
-*   **OAuth `redirect_uri`:** This must be an *exact* match between the Meta dashboard, the dialog URL, and the token exchange URL. Be mindful of trailing slashes and `http` vs `https` (though `localhost` is a special case).
-*   **Streamlit State:** `st.session_state` is essential for persisting data (like login tokens and generated reports) across user interactions. A full browser reload will clear the state.
-*   **Environment Variables (`.env`):** Changes to the `.env` file require a full server restart to be loaded.
-
-* **Engagement by Hour of Day (Heatmap or Bar Chart)**
-Why it's useful: This directly answers the age-old question: "When is the best time for me to post?" A bar chart showing the average engagement rate for posts published at 8 AM, 9 AM, 12 PM, etc., provides a data-driven answer. A heatmap is an even more advanced version that could show Day of Week vs. Hour of Day.
-
-* **Implementation**: More complex. It requires careful grouping by the hour column in our DataFrame and calculating the average engagement for each hour, not the sum. It's a very powerful insight if done correctly.
-
-* **Reach vs. Engagement (Scatter Plot)**
-Why it's useful: This is a classic analysis chart. It helps identify content "quadrants":
-    * High Reach, High Engagement (Viral Hits): The top-right corner. These are your superstars.
-    * High Reach, Low Engagement (Wide but Shallow): Content that got seen but didn't resonate deeply.
-    * Low Reach, High Engagement (Niche Stars): Content that your core audience loved but the algorithm didn't push widely.
-    * Low Reach, Low Engagement (Misses): The bottom-left corner.
-
-* **Implementation**: Moderately complex. We would use matplotlib's scatter plot function, with reach on the x-axis and total_engagement (or engagement rate) on the y-axis. Each dot on the chart would represent a single post.
