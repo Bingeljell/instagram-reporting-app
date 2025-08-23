@@ -33,7 +33,12 @@ st.markdown("""
 
 APP_ID = st.secrets.get("META_APP_ID", os.getenv("META_APP_ID"))
 APP_SECRET = st.secrets.get("META_APP_SECRET", os.getenv("META_APP_SECRET"))
-BASE_REDIRECT_URI = "https://social-media-analyst.streamlit.app/"
+if "STREAMLIT_SERVER_RUN_ON_SAVE" in os.environ:
+    # We are in the cloud (production)
+    BASE_REDIRECT_URI = "https://social-media-analyst.streamlit.app/"
+else:
+    # We are running locally
+    BASE_REDIRECT_URI = "http://localhost:8501/"
 
 # --- 2. AUTHENTICATION LOGIC ---
 
@@ -105,7 +110,7 @@ if 'access_token' not in st.session_state:
     login_url = get_login_url()
 
     button_html = f"""
-    <a href="{login_url}" target="_self" style="text-decoration: none;">
+    <a href="{login_url}" target="_blank" style="text-decoration: none;">
         <div style="
             display: flex;
             justify-content: center;
