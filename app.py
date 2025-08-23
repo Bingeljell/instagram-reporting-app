@@ -33,7 +33,7 @@ st.markdown("""
 
 APP_ID = st.secrets.get("META_APP_ID", os.getenv("META_APP_ID"))
 APP_SECRET = st.secrets.get("META_APP_SECRET", os.getenv("META_APP_SECRET"))
-BASE_REDIRECT_URI = "http://localhost:8501/"
+BASE_REDIRECT_URI = "https://social-media-analyst.streamlit.app/"
 
 # --- 2. AUTHENTICATION LOGIC ---
 
