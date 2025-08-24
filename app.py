@@ -13,7 +13,7 @@ from instagram_reporter import InstagramReporter
 from config import DEFAULT_API_VERSION, FACEBOOK_GRAPH_URL, MAX_DAYS_RANGE
 
 # --- 1. CONFIGURATION & SETUP ---
-st.set_page_config(page_title="Instagram Report Generator", page_icon="📊", layout="centered")
+st.set_page_config(page_title="Social Media Analyst", page_icon="📊", layout="centered")
 load_dotenv()
 
 # This CSS targets the Streamlit selectbox widget to give it a lighter background
@@ -97,7 +97,7 @@ def handle_auth_callback():
         st.rerun()
 
 # --- 3. MAIN APP UI ---
-st.title("📊 Instagram Report Generator")
+st.title("""📊 Social Media Analyst: 1 Click IG Report Generator""")
 
 handle_auth_callback()
 
@@ -106,7 +106,10 @@ if 'auth_error' in st.session_state:
     del st.session_state.auth_error 
 
 if 'access_token' not in st.session_state:
-    st.write("Welcome! Please log in with your Facebook account to generate reports for the Instagram Business Accounts you manage.")
+    st.write("""
+    Welcome to the Social Media Analyst! Our 1-click Instagram Report generator is a must have for social media managers and marketers looking to get a view into how their content has performed. 
+    
+    Please log in with your Facebook account to generate reports for the Instagram Business Accounts you manage.""")
     login_url = get_login_url()
 
     button_html = f"""
@@ -206,17 +209,21 @@ else:
                 # --- THE REPORT FORM ---
                 with st.form(key="report_form"):
                     st.header("Step 1: Configure Your Report")
+                    st.info("Use the options below to customize your report. Please note the maximum date range is 93 days. You get a maximum of 5 generations an hour.", icon="💡")
                     
+                    st.subheader("Select Date Range")
                     col1, col2 = st.columns(2)
                     with col1:
                         start_date = st.date_input("Start Date", value=datetime.now() - timedelta(days=30))
                     with col2:
                         end_date = st.date_input("End Date", value=datetime.now())
                     
+                    st.subheader("Customize Report Details")
                     report_title = st.text_input("Report Title", value=f"{selected_page_display} Performance Report")
                     output_filename = st.text_input("Output Filename", value=f"{selected_page_display.split(' (@')[0]}_Report_{datetime.now().strftime('%Y-%m')}")
                     logo_file = st.file_uploader("Upload a Logo (Optional)", type=['png', 'jpg', 'jpeg'])
 
+                    st.info("Decide how you want to sort your top / bottom posts", icon="💡")
                     sort_options = {
                         "Engagement Rate": "engagement_rate_on_reach",
                         "Reach": "reach",
@@ -236,7 +243,7 @@ else:
                     )
 
                 # --- VALIDATION AND GENERATION LOGIC ---
-                # This now happens AFTER the form is submitted
+                
                 if submitted:
                     # 1. Perform the validation check first
                     days_diff = (end_date - start_date).days
