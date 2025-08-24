@@ -71,6 +71,7 @@ This backlog will be prioritized based on feedback from the alpha testing phase.
 *   **UI/UX Overhaul:**
     *   A full visual redesign of the Streamlit app based on user feedback.
     *   Potential migration to a more customizable front-end framework if needed.
+    *   FB Javascript SDK integration for a more seamless login experience. 
 
 *   **Reporting Engine Enhancements:**
     *   **"Key Insights" Slide:** Implement a slide that uses logic (or a future LLM integration) to generate automated text summaries (e.g., "Video posts performed 35% better this month.").
