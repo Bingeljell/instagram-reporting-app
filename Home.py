@@ -301,10 +301,22 @@ else:
                                     st.session_state['filename'] = output_filename
                                     st.session_state['report_ready'] = True
 
+                                    # Analytics logging on success
+                                    user_name = st.session_state.get('user_name', 'UnknownUser')
+                                    page_name = selected_page_display.split(' (@')[0]
+                                    # Note: You can uncomment these lines once you've re-added logger_config.py
+                                    # analytics_logger.info(f"{user_name},{page_name},{days_diff}")
+                                    
+                                    st.session_state.report_timestamps.append(datetime.now())
+                                    st.rerun()
+
                             except Exception as e:
                                 # For MVP, simplified error handling without logger
-                                st.session_state['generation_error'] = f"An error occurred: {str(e)}"
-                                st.error("An error occurred during report generation. Please try again or contact support.")
+                                # Log the error for your records
+                                # logger.error("Report generation failed.", exc_info=True)
+                                # Save the error to the session state to display it after the rerun
+                                st.session_state['generation_error'] = f"An error occurred: {e}"
+                                st.rerun() # Rerun to display the error message at the top of the page
                         
                         # Simple analytics tracking (replace with your preferred method)
                         user_name = st.session_state.get('user_name', 'UnknownUser')
