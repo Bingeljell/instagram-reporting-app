@@ -1,4 +1,4 @@
-# pages/1_Terms_of_Service.py
+# pages/4_Terms_Of_Service.py
 import os
 import streamlit as st
 
