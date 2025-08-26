@@ -70,16 +70,33 @@ class InstagramReporter:
             current_url = url
             while current_url:
                 response = requests.get(current_url, params=params if current_url == url else None)
-                response.raise_for_status()
+                response.raise_for_status() # This will raise an HTTPError for 4xx/5xx responses
                 data = response.json()
                 posts = data.get('data', [])
                 all_posts.extend(posts)
                 current_url = data.get('paging', {}).get('next')
-        except requests.RequestException as e:
-            print(f"❌ Error fetching posts: {e}")
-            if e.response is not None:
-                print(f"Response Body: {e.response.text}")
-            return []
+        except requests.exceptions.HTTPError as e:
+            # --- NEW, SMARTER ERROR HANDLING ---
+            # Inspect the HTTP status code to give a better error message
+            status_code = e.response.status_code
+            error_message = e.response.json().get('error', {}).get('message', 'No details provided.')
+            
+            if status_code == 400:
+                # A 400 error often means the token is invalid or permissions are wrong
+                raise ValueError(
+                    f"API Error (Bad Request): The user's access token may be invalid or expired. "
+                    f"Please try logging out and in again. (Details: {error_message})"
+                )
+            elif status_code == 429:
+                # API rate limit exceeded
+                raise ValueError("The API is currently busy. Please wait a few minutes and try again.")
+            else:
+                # Generic API error
+                raise ValueError(f"An unexpected API error occurred (Status {status_code}). Please try again later.")
+        except Exception as e:
+            # Catch other errors like network issues
+            raise ValueError(f"A network error occurred: {e}")
+        
 
         for post in all_posts:
             if 'insights' in post and 'data' in post['insights']:

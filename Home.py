@@ -1,4 +1,4 @@
-# app.py
+# Home.py
 
 import streamlit as st
 import os
@@ -6,112 +6,125 @@ import tempfile
 from datetime import datetime, timedelta
 from dotenv import load_dotenv
 import requests
+import secrets
 
-from logger_config import logger, analytics_logger
+# Note: Remove these imports after removing logger references
+# from logger_config import logger, analytics_logger
 
 from instagram_reporter import InstagramReporter
 from config import DEFAULT_API_VERSION, FACEBOOK_GRAPH_URL, MAX_DAYS_RANGE
+
+from itsdangerous import URLSafeTimedSerializer, BadSignature, SignatureExpired
+
 
 # --- 1. CONFIGURATION & SETUP ---
 st.set_page_config(page_title="Social Media Analyst", page_icon="📊", layout="centered")
 load_dotenv()
 
-# This CSS targets the Streamlit selectbox widget to give it a lighter background
-# in dark mode, making it much more visible.
 st.markdown("""
 <style>
-    /* This targets the selectbox main container */
-    div[data-baseweb="select"] > div:first-child {
-        background-color: #2a2a31; /* A dark grey, change as you like */
-    }
-    /* This targets the dropdown menu options */
-    div[data-baseweb="popover"] ul {
-        background-color: #3e3e4a;
-    }
+    div[data-baseweb="select"] > div:first-child { background-color: #2a2a31; }
+    div[data-baseweb="popover"] ul { background-color: #3e3e4a; }
 </style>
 """, unsafe_allow_html=True)
 
 APP_ID = st.secrets.get("META_APP_ID", os.getenv("META_APP_ID"))
 APP_SECRET = st.secrets.get("META_APP_SECRET", os.getenv("META_APP_SECRET"))
+
+STATE_TTL_SECONDS = 300
+_state_signer = URLSafeTimedSerializer(APP_SECRET, salt="oauth-state")
+
 if "STREAMLIT_SERVER_RUN_ON_SAVE" in os.environ:
-    # We are in the cloud (production)
     BASE_REDIRECT_URI = "https://socialmedia-analyst.streamlit.app/"
 else:
-    # We are running locally
     BASE_REDIRECT_URI = "http://localhost:8501/"
 
-# --- 2. AUTHENTICATION LOGIC ---
+
+
+def make_state():
+    return _state_signer.dumps({"nonce": secrets.token_urlsafe(16)})
+
+def verify_state(state):
+    try:
+        _state_signer.loads(state, max_age=STATE_TTL_SECONDS)
+        return True
+    except (BadSignature, SignatureExpired):
+        return False
 
 def get_login_url():
+    state = make_state()
     scopes = "public_profile,pages_show_list,pages_read_engagement,instagram_basic,instagram_manage_insights"
-    redirect_uri = BASE_REDIRECT_URI
-    api_version = DEFAULT_API_VERSION
     return (
-        f"https://www.facebook.com/{api_version}/dialog/oauth?"
-        f"client_id={APP_ID}&"
-        f"redirect_uri={redirect_uri}&"
-        f"state=st_app&"
-        f"scope={scopes}"
+        f"https://www.facebook.com/{DEFAULT_API_VERSION}/dialog/oauth?"
+        f"client_id={APP_ID}&redirect_uri={BASE_REDIRECT_URI}&state={state}&scope={scopes}"
     )
 
-def handle_auth_callback():
-    auth_code = st.query_params.get("code")
-    if not auth_code or 'access_token' in st.session_state:
-        return
 
-    redirect_uri = BASE_REDIRECT_URI
-    api_version = DEFAULT_API_VERSION
-    token_url = (
-        f"{FACEBOOK_GRAPH_URL}/{api_version}/oauth/access_token?"
-        f"client_id={APP_ID}&"
-        f"redirect_uri={redirect_uri}&"
-        f"client_secret={APP_SECRET}&"
-        f"code={auth_code}"
-    )
-    
-    response = requests.get(token_url)
-    st.query_params.clear()
 
-    if response.status_code == 200 and 'access_token' in response.json():
-        token_data = response.json()
-        access_token = token_data['access_token']
-        st.session_state['access_token'] = access_token
-        
-        user_info_url = f"{FACEBOOK_GRAPH_URL}/me?fields=name,picture&access_token={access_token}"
-        user_info_response = requests.get(user_info_url)
-        if user_info_response.status_code == 200:
-            user_info = user_info_response.json()
-            st.session_state['user_name'] = user_info.get('name')
-            st.session_state['user_picture'] = user_info.get('picture', {}).get('data', {}).get('url')
-        
-        pages_url = f"{FACEBOOK_GRAPH_URL}/me/accounts?fields=name,id,instagram_business_account{{name,username}}&access_token={access_token}"
-        pages_response = requests.get(pages_url)
-        if pages_response.status_code == 200:
-            all_pages = pages_response.json().get('data', [])
-            eligible_pages = [page for page in all_pages if 'instagram_business_account' in page]
-            st.session_state['user_pages'] = eligible_pages
-        
-        st.rerun() 
-    else:
-        st.session_state['auth_error'] = f"Token exchange failed: {response.json().get('error', {}).get('message')}"
-        st.rerun()
+def process_auth():
+    if 'access_token' in st.session_state:
+        return True
+    if 'code' in st.query_params and 'state' in st.query_params:
+        code = st.query_params.get("code")
+        state = st.query_params.get("state")
+        st.query_params.clear()
+        if not verify_state(state):
+            st.session_state['auth_error'] = "Invalid login state."
+            return False
+
+        token_url = f"{FACEBOOK_GRAPH_URL}/{DEFAULT_API_VERSION}/oauth/access_token"
+        try:
+            r = requests.post(token_url, data={
+                "client_id": APP_ID,
+                "redirect_uri": BASE_REDIRECT_URI,
+                "client_secret": APP_SECRET,
+                "code": code,
+            }, timeout=10)
+            r.raise_for_status()
+            data = r.json()
+            access_token = data.get("access_token")
+            if not access_token:
+                st.session_state['auth_error'] = "No access token returned."
+                return False
+            st.session_state['access_token'] = access_token
+
+            headers = {"Authorization": f"Bearer {access_token}"}
+            u = requests.get(f"{FACEBOOK_GRAPH_URL}/me?fields=name,picture", headers=headers, timeout=10).json()
+            st.session_state['user_name'] = u.get('name')
+            st.session_state['user_picture'] = (u.get('picture') or {}).get('data', {}).get('url')
+
+            pages = requests.get(
+                f"{FACEBOOK_GRAPH_URL}/me/accounts?fields=name,instagram_business_account{{name,username}}",
+                headers=headers, timeout=10
+            ).json().get('data', [])
+            st.session_state['user_pages'] = [p for p in pages if 'instagram_business_account' in p]
+            return True
+        except requests.RequestException:
+            st.session_state['auth_error'] = "Authentication error. Please try again."
+            return False
+    return False
+
 
 # --- 3. MAIN APP UI ---
-st.title("""📊 Social Media Analyst: 1 Click IG Report Generator""")
+st.title("📊 Social Media Analyst: 1 Click IG Report Generator")
 
-handle_auth_callback()
+is_logged_in = process_auth()
 
+# Show any authentication errors
 if 'auth_error' in st.session_state:
     st.error(st.session_state.auth_error)
-    del st.session_state.auth_error 
+    del st.session_state.auth_error
 
-if 'access_token' not in st.session_state:
+if not is_logged_in:
+    # --- LOGIN VIEW ---
     st.write("""
     Welcome to the Social Media Analyst! Our 1-click Instagram Report generator is a must have for social media managers and marketers looking to get a view into how their content has performed. 
     
-    Please log in with your Facebook account to generate reports for the Instagram Business Accounts you manage.""")
-    login_url = get_login_url()
+    Please log in with your Facebook account to generate reports for the Instagram Business Accounts you manage.
+    """)
 
+    login_url = get_login_url()
+    
     button_html = f"""
     <a href="{login_url}" target="_blank" style="text-decoration: none;">
         <div style="
@@ -135,10 +148,9 @@ if 'access_token' not in st.session_state:
     """
     st.markdown(button_html, unsafe_allow_html=True)
     
-    
     st.divider()
 
-    with st.expander("🔑 Read this before you connect"):
+    with st.expander("🔒 Read this before you connect"):
         st.write("""
             For a successful connection, please ensure you meet the following requirements:
             
@@ -146,7 +158,7 @@ if 'access_token' not in st.session_state:
             - **Your Instagram account must be a Business or Creator account.** Personal Instagram accounts cannot be accessed via the API.
             - **Your Instagram account must be correctly linked to the Facebook Page.** You can check this in your Facebook Page's settings under "Linked Accounts."
             - **Grant all requested permissions.** When the Facebook login window appears, you must approve all the requested permissions for the app to function correctly.
-            - **Select the Pages & Accounts.** The app will show you your Facebook accounts and the linked IG accounts. Please select the relevent ones so you can generate reports for them. 
+            - **Select the Pages & Accounts.** The app will show you your Facebook accounts and the linked IG accounts. Please select the relevant ones so you can generate reports for them. 
         """)
     
     with st.expander("🔒 How we handle your data and security"):
@@ -156,7 +168,9 @@ if 'access_token' not in st.session_state:
             - **Your access token is temporary.** It's stored securely in your browser session and is gone when you close the tab.
             - **We only request the permissions we need.** We ask for access to your pages and Instagram data solely to generate your reports.
         """)
+
 else:
+    # --- LOGGED IN VIEW ---
     col1, col2 = st.columns([0.85, 0.15])
     with col1:
         st.success(f"Logged in as **{st.session_state.get('user_name', 'User')}**")
@@ -166,17 +180,15 @@ else:
     
     st.divider()
 
+    # Show any generation errors
     if 'generation_error' in st.session_state:
         st.error(st.session_state.generation_error)
-        # Clear the error after displaying it so it doesn't stick around forever
-        del st.session_state['generation_error']
+        del st.session_state.generation_error
     
-    # --- Rate Limiting Logic Tryhards ---
-    # Initialize the report history in the session state if it doesn't exist
+    # Rate limiting logic
     if 'report_timestamps' not in st.session_state:
         st.session_state.report_timestamps = []
     
-    # Filter out timestamps older than an hour ago
     one_hour_ago = datetime.now() - timedelta(hours=1)
     st.session_state.report_timestamps = [
         ts for ts in st.session_state.report_timestamps if ts > one_hour_ago
@@ -205,11 +217,10 @@ else:
             selected_page_id = page_options[selected_page_display]
 
             if 'report_ready' not in st.session_state:
-
-                # --- THE REPORT FORM ---
+                # Report generation form
                 with st.form(key="report_form"):
                     st.header("Step 1: Configure Your Report")
-                    st.info("Use the options below to customize your report. Please note the maximum date range is 93 days. You get a maximum of 5 generations an hour.", icon="💡")
+                    st.info(f"Use the options below to customize your report. Please note the maximum date range is {MAX_DAYS_RANGE} days. You get a maximum of {REPORTS_PER_HOUR_LIMIT} generations an hour.", icon="💡")
                     
                     st.subheader("Select Date Range")
                     col1, col2 = st.columns(2)
@@ -239,13 +250,11 @@ else:
                     
                     submitted = st.form_submit_button(
                         "Generate Report 🚀",
-                        disabled=not can_generate_report #Rate Limiting folks
+                        disabled=not can_generate_report
                     )
 
-                # --- VALIDATION AND GENERATION LOGIC ---
-                
+                # Handle form submission
                 if submitted:
-                    # 1. Perform the validation check first
                     days_diff = (end_date - start_date).days
                     is_date_range_valid = True
 
@@ -256,20 +265,23 @@ else:
                         st.error(f"Error: Please select a date range of {MAX_DAYS_RANGE} days or less. The current range is {days_diff} days.")
                         is_date_range_valid = False
                     
-                    # 2. Only proceed if the validation passes
                     if is_date_range_valid:
                         if 'report_ready' in st.session_state:
                             del st.session_state['report_ready']
                         
                         with st.spinner("Generating... This may take a moment..."):
                             try:
-                                # ... (The entire logic for creating the reporter and generating the files) ...
-                                
                                 logo_path = None
                                 with tempfile.TemporaryDirectory() as temp_dir:
                                     if logo_file:
-                                        logo_path = os.path.join(temp_dir, logo_file.name)
-                                        with open(logo_path, "wb") as f: f.write(logo_file.getbuffer())
+                                        safe_name = os.path.basename(logo_file.name).replace("\x00", "")
+                                        if logo_file.size > 5 * 1024 * 1024:  # 5 MB
+                                            st.error("Logo too large (max 5MB).")
+                                            st.stop()  # <-- instead of return
+
+                                        logo_path = os.path.join(temp_dir, safe_name)
+                                        with open(logo_path, "wb") as f:
+                                            f.write(logo_file.getbuffer())
                                     
                                     sort_by_value = sort_options[sort_by_display]
                                     
@@ -282,60 +294,57 @@ else:
                                         sort_metric=sort_by_value,
                                         sort_metric_display=sort_by_display
                                     )
+                                    
                                     st.session_state['summary_csv_data'] = summary_csv
                                     st.session_state['raw_csv_data'] = raw_csv
                                     st.session_state['pptx_report_data'] = pptx_data
                                     st.session_state['filename'] = output_filename
                                     st.session_state['report_ready'] = True
 
-
                             except Exception as e:
-                                # Log the full traceback to the file and console
-                                logger.error("Report generation failed.", exc_info=True)
-                                st.session_state['generation_error'] = f"An error occurred: {e}"
-                                # Then, show a user-friendly message on the webpage
-                                st.error(f"An error occurred during report generation. The issue has been logged, please contact Support.")
+                                # For MVP, simplified error handling without logger
+                                st.session_state['generation_error'] = f"An error occurred: {str(e)}"
+                                st.error("An error occurred during report generation. Please try again or contact support.")
                         
-                        # --- Log the successful event and Janky Analytics ---
+                        # Simple analytics tracking (replace with your preferred method)
                         user_name = st.session_state.get('user_name', 'UnknownUser')
                         page_name = selected_page_display.split(' (@')[0]
-                        analytics_logger.info(f"{user_name},{page_name},{days_diff}")
+                        # analytics_logger.info(f"{user_name},{page_name},{days_diff}")  # Remove this line
                         
-                        # Rerun to display the download buttons
                         st.session_state.report_timestamps.append(datetime.now())
                         st.rerun()
 
-        if 'report_ready' in st.session_state:
-            st.divider()
-            st.header("Step 2: Download Your Reports")
-            
-            # Use three columns for a clean layout
-            dl_col1, dl_col2, dl_col3 = st.columns(3)
-            with dl_col1:
-                st.download_button(
-                    "📥 Download PowerPoint", 
-                    st.session_state['pptx_report_data'], 
-                    f"{st.session_state['filename']}.pptx"
-                )
-            with dl_col2:
-                st.download_button(
-                    "📥 Download Summary CSV", 
-                    st.session_state['summary_csv_data'], 
-                    f"{st.session_state['filename']}_Summary.csv"
-                )
-            with dl_col3:
-                st.download_button(
-                    "📥 Download Raw Data CSV", 
-                    st.session_state['raw_csv_data'], 
-                    f"{st.session_state['filename']}_RawData.csv"
-                )
-            
-            if st.button("Generate Another Report"):
-                keys_to_keep = ['access_token', 'user_name', 'user_picture', 'user_pages']
-                for key in list(st.session_state.keys()):
-                    if key not in keys_to_keep:
-                        del st.session_state[key]
-                st.rerun()
+            # Download section
+            if 'report_ready' in st.session_state:
+                st.divider()
+                st.header("Step 2: Download Your Reports")
+                
+                dl_col1, dl_col2, dl_col3 = st.columns(3)
+                with dl_col1:
+                    st.download_button(
+                        "📥 Download PowerPoint", 
+                        st.session_state['pptx_report_data'], 
+                        f"{st.session_state['filename']}.pptx"
+                    )
+                with dl_col2:
+                    st.download_button(
+                        "📥 Download Summary CSV", 
+                        st.session_state['summary_csv_data'], 
+                        f"{st.session_state['filename']}_Summary.csv"
+                    )
+                with dl_col3:
+                    st.download_button(
+                        "📥 Download Raw Data CSV", 
+                        st.session_state['raw_csv_data'], 
+                        f"{st.session_state['filename']}_RawData.csv"
+                    )
+                
+                if st.button("Generate Another Report"):
+                    keys_to_keep = ['access_token', 'user_name', 'user_picture', 'user_pages']
+                    for key in list(st.session_state.keys()):
+                        if key not in keys_to_keep:
+                            del st.session_state[key]
+                    st.rerun()
 
     st.divider()
     if st.button("Logout"):
