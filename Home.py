@@ -150,7 +150,7 @@ if not is_logged_in:
     
     st.divider()
 
-    with st.expander("🔒 Read this before you connect"):
+    with st.expander("📖 Read this before you connect"):
         st.write("""
             For a successful connection, please ensure you meet the following requirements:
             
@@ -164,6 +164,7 @@ if not is_logged_in:
     with st.expander("🔒 How we handle your data and security"):
         st.write("""
             - **We use the official Meta API.** You are logging in directly with Facebook.
+            - **All communication is Encrypted.** Your login is protected with a signed, time-sensitive CSRF token, and all data is transferred over secure HTTPS.
             - **We never see your password.** The login happens on Facebook.com.
             - **Your access token is temporary.** It's stored securely in your browser session and is gone when you close the tab.
             - **We only request the permissions we need.** We ask for access to your pages and Instagram data solely to generate your reports.
