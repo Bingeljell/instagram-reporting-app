@@ -1,6 +1,7 @@
 # Home.py
 
 import streamlit as st
+import streamlit.components.v1 as components
 import os
 import tempfile
 from datetime import datetime, timedelta
@@ -39,6 +40,33 @@ if "STREAMLIT_SERVER_RUN_ON_SAVE" in os.environ:
 else:
     BASE_REDIRECT_URI = "http://localhost:8501/"
 
+
+def scrub_url_bar_once():
+    # avoid re-injecting on every rerun
+    if st.session_state.get("_url_scrubbed"):
+        return
+    components.html("""
+      <script>
+        (function () {
+          try {
+            // Clean current frame URL
+            const url = new URL(window.location.href);
+            url.search = '';              // drop ?code&state
+            if (url.hash === '#_=_') url.hash = ''; // FB artifact
+            window.history.replaceState({}, document.title, url.pathname + url.hash);
+
+            // Best effort: also try parent (may be same-origin on Streamlit Cloud)
+            if (window.parent && window.parent !== window) {
+              const purl = new URL(window.parent.location.href);
+              purl.search = '';
+              if (purl.hash === '#_=_') purl.hash = '';
+              window.parent.history.replaceState({}, document.title, purl.pathname + purl.hash);
+            }
+          } catch (e) { /* ignore */ }
+        })();
+      </script>
+    """, height=0)
+    st.session_state["_url_scrubbed"] = True
 
 
 def make_state():
@@ -98,6 +126,8 @@ def process_auth():
                 headers=headers, timeout=10
             ).json().get('data', [])
             st.session_state['user_pages'] = [p for p in pages if 'instagram_business_account' in p]
+            scrub_url_bar_once()
+            
             return True
         except requests.RequestException:
             st.session_state['auth_error'] = "Authentication error. Please try again."
