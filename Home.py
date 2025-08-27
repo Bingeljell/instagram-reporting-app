@@ -98,12 +98,7 @@ def process_auth():
                 headers=headers, timeout=10
             ).json().get('data', [])
             st.session_state['user_pages'] = [p for p in pages if 'instagram_business_account' in p]
-            try:
-                st.query_params.clear()              # Streamlit ≥ ~1.30
-            except Exception:
-                st.experimental_set_query_params()   # Legacy fallback
-
-            st.rerun()
+            
             
             return True
         except requests.RequestException:
@@ -365,6 +360,7 @@ else:
                         if key not in keys_to_keep:
                             del st.session_state[key]
                     st.rerun()
+            
 
     st.divider()
     if st.button("Logout"):
