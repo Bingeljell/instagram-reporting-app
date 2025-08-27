@@ -209,7 +209,8 @@ else:
     st.session_state['oauth_processed'] = True
     if not st.session_state.get('_post_oauth_rerun'):
         try:
-            st.query_params.clear()              # Streamlit ≥ ~1.30
+            st.query_params.pop("code", None)  # Remove 'code' if present
+            st.query_params.pop("state", None) # Remove 'state' if present              # Streamlit ≥ ~1.30
         except Exception:
             st.experimental_set_query_params()   # legacy fallback (sets empty)
         st.session_state['_post_oauth_rerun'] = True
