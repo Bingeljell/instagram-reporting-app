@@ -98,26 +98,13 @@ def process_auth():
                 headers=headers, timeout=10
             ).json().get('data', [])
             st.session_state['user_pages'] = [p for p in pages if 'instagram_business_account' in p]
+            try:
+                st.query_params.clear()              # Streamlit ≥ ~1.30
+            except Exception:
+                st.experimental_set_query_params()   # Legacy fallback
+
+            st.rerun()
             
-            components.html("""
-                <script>
-                    try {
-                    const url = new URL(window.location.href);
-                    url.search = '';                          // drop ?code&state
-                    if (url.hash === '#_=_') url.hash = '';   // FB quirk
-                    window.history.replaceState({}, document.title, url.pathname + url.hash);
-
-                    // Best effort if running inside an iframe (Streamlit Cloud):
-                    if (window.parent && window.parent !== window) {
-                        const purl = new URL(window.parent.location.href);
-                        purl.search = '';
-                        if (purl.hash === '#_=_') purl.hash = '';
-                        window.parent.history.replaceState({}, document.title, purl.pathname + purl.hash);
-                    }
-                    } catch (e) {}
-                </script>
-                """, height=0)
-
             return True
         except requests.RequestException:
             st.session_state['auth_error'] = "Authentication error. Please try again."
