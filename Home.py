@@ -177,6 +177,7 @@ else:
     col1, col2 = st.columns([0.85, 0.15])
     with col1:
         st.success(f"Logged in as **{st.session_state.get('user_name', 'User')}**")
+        
     with col2:
         if st.session_state.get('user_picture'):
             st.image(st.session_state['user_picture'])
@@ -204,6 +205,18 @@ else:
         st.warning(f"You have reached the limit of {REPORTS_PER_HOUR_LIMIT} reports per hour. Please try again later.")
     
     pages = st.session_state.get('user_pages', [])
+    
+    st.session_state['oauth_processed'] = True
+    if not st.session_state.get('_post_oauth_rerun'):
+        try:
+            st.query_params.clear()              # Streamlit ≥ ~1.30
+        except Exception:
+            st.experimental_set_query_params()   # legacy fallback (sets empty)
+        st.session_state['_post_oauth_rerun'] = True
+        try:
+            st.rerun()
+        except Exception:
+            st.experimental_rerun()
     if not pages:
         st.warning("You do not seem to manage any eligible Instagram Business Accounts. Please ensure your account has the correct permissions and that you granted them during login.")
     else:
