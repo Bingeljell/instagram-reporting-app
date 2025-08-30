@@ -25,3 +25,6 @@ Steamlit logs/
 venv/
 env/
 .venv/
+
+# 21N Pages
+/lp
