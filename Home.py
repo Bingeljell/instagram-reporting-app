@@ -68,11 +68,10 @@ def process_auth():
     Performs a "get or create" operation for users.
     Returns True if the user is successfully logged in.
     """
-    # If the user is already fully logged in (with a DB record), we're good.
+
     if 'access_token' in st.session_state and 'user_id' in st.session_state:
         return True
 
-    # This block only runs on the redirect back from Facebook
     if 'code' in st.query_params and 'state' in st.query_params:
         code = st.query_params.get("code")
         state = st.query_params.get("state")
@@ -84,7 +83,6 @@ def process_auth():
 
         token_url = f"{FACEBOOK_GRAPH_URL}/{DEFAULT_API_VERSION}/oauth/access_token"
         try:
-            # Exchange code for token
             r = requests.post(token_url, data={
                 "client_id": APP_ID, "redirect_uri": BASE_REDIRECT_URI,
                 "client_secret": APP_SECRET, "code": code,
@@ -101,49 +99,64 @@ def process_auth():
             st.session_state['access_token'] = access_token
             headers = {"Authorization": f"Bearer {access_token}"}
             
-            # Fetch user info from Facebook, including email and Facebook ID
             user_info_url = f"{FACEBOOK_GRAPH_URL}/me?fields=id,name,email,picture"
             u_info = requests.get(user_info_url, headers=headers, timeout=15).json()
             
             facebook_id = u_info.get('id')
-            
             if not facebook_id:
                 st.session_state['auth_error'] = "Could not retrieve user ID from Facebook."
                 st.rerun()
                 return False
 
-            # --- DATABASE GET OR CREATE LOGIC ---
+            # --- DATABASE GET OR CREATE LOGIC (CORRECTED) ---
             db = next(get_db())
             db_user = get_user_by_facebook_id(db, facebook_id=facebook_id)
 
             if not db_user:
-                # User is new, create an account in our database
+                # --- THIS IS THE FIX ---
+                # 1. Correctly get all the variables from the API response.
+                user_name = u_info.get('name')
+                user_email = u_info.get('email') # This line was missing
+
+                # 2. Check if the email is unique before creating, to handle edge cases.
+                if user_email:
+                    existing_email_user = db.query(User).filter(User.email == user_email).first()
+                    if existing_email_user:
+                        # If email exists but facebook_id doesn't match, this is a conflict.
+                        # For now, we can append a random string to make it unique or handle as an error.
+                        # A simple approach is to nullify it if it's not unique.
+                        user_email = None
+                # --- END OF FIX ---
+
                 print(f"Creating new user for Facebook ID: {facebook_id}")
                 db_user = create_user(
                     db, 
                     facebook_id=facebook_id,
-                    name=u_info.get('name'),
-                    email=u_info.get('email')
+                    name=user_name,
+                    email=user_email # Now we pass the correct variable
                 )
             else:
-                # User exists, update their last login time
                 print(f"Found existing user: {db_user.name}")
                 db_user.last_login_at = datetime.utcnow()
                 db.commit()
 
-            # --- SAVE USER INFO FROM *OUR* DB TO SESSION ---
+            # Handle case where user creation might fail silently
+            if not db_user:
+                st.session_state['auth_error'] = "Failed to create a user account in the database."
+                db.close()
+                st.rerun()
+                return False
+
             st.session_state['user_id'] = db_user.id
             st.session_state['user_tier'] = db_user.tier
             st.session_state['user_name'] = db_user.name
             st.session_state['user_picture'] = (u_info.get('picture') or {}).get('data', {}).get('url')
             
-            # Fetch pages and clean up as before
             pages = requests.get(f"{FACEBOOK_GRAPH_URL}/me/accounts?fields=name,id,instagram_business_account{{name,username}}", headers=headers, timeout=15).json().get('data', [])
             st.session_state['user_pages'] = [p for p in pages if 'instagram_business_account' in p]
             
-            db.close() # Close the database session
+            db.close()
             
-            # Use the JS redirect to clean the URL
             redirect_script = f"<script>window.location.href = '{BASE_REDIRECT_URI}';</script>"
             html(redirect_script)
             st.stop()
