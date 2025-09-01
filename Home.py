@@ -62,13 +62,12 @@ def get_login_url():
 
 
 
+# In Home.py, replace the entire process_auth function
+
 def process_auth():
     """
-    Handles the entire authentication lifecycle, now with a persistent database.
-    Performs a "get or create" operation for users.
-    Returns True if the user is successfully logged in.
+    Handles the entire authentication lifecycle, with added debugging probes.
     """
-
     if 'access_token' in st.session_state and 'user_id' in st.session_state:
         return True
 
@@ -76,8 +75,11 @@ def process_auth():
         code = st.query_params.get("code")
         state = st.query_params.get("state")
         
+        # --- DEBUG PROBE 1 ---
+        print("--- [DEBUG] Auth callback initiated.")
+        
         if not verify_state(state):
-            st.session_state['auth_error'] = "Invalid login state (CSRF protection). Please try again."
+            st.session_state['auth_error'] = "Invalid login state (CSRF protection)."
             st.rerun()
             return False
 
@@ -92,7 +94,7 @@ def process_auth():
             access_token = data.get("access_token")
 
             if not access_token:
-                st.session_state['auth_error'] = "Authentication failed: No access token returned."
+                st.session_state['auth_error'] = "Auth Error: No access token returned."
                 st.rerun()
                 return False
                 
@@ -103,66 +105,65 @@ def process_auth():
             u_info = requests.get(user_info_url, headers=headers, timeout=15).json()
             
             facebook_id = u_info.get('id')
+            user_name = u_info.get('name')
+            user_email = u_info.get('email')
+
+            # --- DEBUG PROBE 2 ---
+            print(f"--- [DEBUG] Fetched FB User Info: ID={facebook_id}, Name={user_name}, Email={user_email}")
+
             if not facebook_id:
-                st.session_state['auth_error'] = "Could not retrieve user ID from Facebook."
+                st.session_state['auth_error'] = "Auth Error: Could not retrieve user ID from Facebook."
                 st.rerun()
                 return False
 
-            # --- DATABASE GET OR CREATE LOGIC (CORRECTED) ---
+            # --- DATABASE INTERACTION ---
             db = next(get_db())
+            print("--- [DEBUG] Database session opened.")
+            
             db_user = get_user_by_facebook_id(db, facebook_id=facebook_id)
 
             if not db_user:
-                # --- THIS IS THE FIX ---
-                # 1. Correctly get all the variables from the API response.
-                user_name = u_info.get('name')
-                user_email = u_info.get('email') # This line was missing
-
-                # 2. Check if the email is unique before creating, to handle edge cases.
-                if user_email:
-                    existing_email_user = db.query(User).filter(User.email == user_email).first()
-                    if existing_email_user:
-                        # If email exists but facebook_id doesn't match, this is a conflict.
-                        # For now, we can append a random string to make it unique or handle as an error.
-                        # A simple approach is to nullify it if it's not unique.
-                        user_email = None
-                # --- END OF FIX ---
-
-                print(f"Creating new user for Facebook ID: {facebook_id}")
+                print(f"--- [DEBUG] User not in DB. Attempting to create...")
                 db_user = create_user(
                     db, 
                     facebook_id=facebook_id,
                     name=user_name,
-                    email=user_email # Now we pass the correct variable
+                    email=user_email
                 )
+                if db_user:
+                    print(f"--- [DEBUG] DB user created successfully. ID: {db_user.id}")
+                else:
+                    print("--- [DEBUG] CRITICAL: create_user function returned None.")
+                    st.session_state['auth_error'] = "DB Error: Failed to create user record."
+                    db.close()
+                    st.rerun()
+                    return False
             else:
-                print(f"Found existing user: {db_user.name}")
+                print(f"--- [DEBUG] Found existing user in DB. ID: {db_user.id}")
                 db_user.last_login_at = datetime.utcnow()
                 db.commit()
+                print("--- [DEBUG] Updated last_login_at.")
 
-            # Handle case where user creation might fail silently
-            if not db_user:
-                st.session_state['auth_error'] = "Failed to create a user account in the database."
-                db.close()
-                st.rerun()
-                return False
-
+            # --- SAVE TO SESSION ---
             st.session_state['user_id'] = db_user.id
             st.session_state['user_tier'] = db_user.tier
-            st.session_state['user_name'] = db_user.name
-            st.session_state['user_picture'] = (u_info.get('picture') or {}).get('data', {}).get('url')
+            # ... (rest of the session saving is the same)
             
-            pages = requests.get(f"{FACEBOOK_GRAPH_URL}/me/accounts?fields=name,id,instagram_business_account{{name,username}}", headers=headers, timeout=15).json().get('data', [])
-            st.session_state['user_pages'] = [p for p in pages if 'instagram_business_account' in p]
-            
+            print("--- [DEBUG] User info saved to session. Preparing to redirect.")
             db.close()
             
+            # Use the JS redirect to clean the URL
             redirect_script = f"<script>window.location.href = '{BASE_REDIRECT_URI}';</script>"
             html(redirect_script)
             st.stop()
 
-        except requests.RequestException as e:
-            st.session_state['auth_error'] = f"Authentication error: {str(e)}"
+        except Exception as e:
+            # --- DEBUG PROBE 3 ---
+            import traceback
+            print("--- [DEBUG] CRITICAL ERROR in process_auth ---")
+            traceback.print_exc() # Print full traceback to the server log
+            print("-----------------------------------------")
+            st.session_state['auth_error'] = f"A critical error occurred: {str(e)}"
             st.rerun()
             return False
             
