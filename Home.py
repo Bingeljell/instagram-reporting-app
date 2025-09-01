@@ -37,7 +37,7 @@ STATE_TTL_SECONDS = 300
 _state_signer = URLSafeTimedSerializer(APP_SECRET, salt="oauth-state")
 
 if "STREAMLIT_SERVER_RUN_ON_SAVE" in os.environ:
-    BASE_REDIRECT_URI = "https://socialmedia-analyst.streamlit.app/"
+    BASE_REDIRECT_URI = "https://dev-smanalyst.streamlit.app/" # THIS IS DEV SERVER - PLEASE CHANGE ON LIVE
 else:
     BASE_REDIRECT_URI = "http://localhost:8501/"
 
@@ -153,12 +153,12 @@ def process_auth():
             db.close()
             
             # Use the JS redirect to clean the URL
-            #redirect_script = f"<script>window.location.href = '{BASE_REDIRECT_URI}';</script>"
-            # html(redirect_script)
-            # st.stop()
+            redirect_script = f"<script>window.location.href = '{BASE_REDIRECT_URI}';</script>"
+            html(redirect_script)
+            st.stop()
 
-            st.rerun()
             
+
         except Exception as e:
             # --- DEBUG PROBE 3 ---
             import traceback
