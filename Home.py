@@ -155,7 +155,7 @@ def process_auth():
     return False
 
 # --- 3. MAIN APP UI ---
-st.title("📊 Social Media Analyst: 1 Click IG Report Generator")
+st.title("📊 Social Media Analyst: 1 Click IG Report Generator : DEV MODE")
 
 is_logged_in = process_auth()
 
@@ -167,6 +167,7 @@ if 'auth_error' in st.session_state:
 if not is_logged_in:
     # --- LOGIN VIEW ---
     st.write("""
+    1. Login with Email permission test (for dev mode)
     Welcome to the Social Media Analyst! Our 1-click Instagram Report generator is a must have for social media managers and marketers looking to get a view into how their content has performed. 
     
     Please log in with your Facebook account to generate reports for the Instagram Business Accounts you manage.
