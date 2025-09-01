@@ -106,6 +106,7 @@ def process_auth():
             u_info = requests.get(user_info_url, headers=headers, timeout=15).json()
             
             facebook_id = u_info.get('id')
+            
             if not facebook_id:
                 st.session_state['auth_error'] = "Could not retrieve user ID from Facebook."
                 st.rerun()
@@ -168,6 +169,7 @@ if not is_logged_in:
     # --- LOGIN VIEW ---
     st.write("""
     1. Login with Email permission test (for dev mode)
+
     Welcome to the Social Media Analyst! Our 1-click Instagram Report generator is a must have for social media managers and marketers looking to get a view into how their content has performed. 
     
     Please log in with your Facebook account to generate reports for the Instagram Business Accounts you manage.

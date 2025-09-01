@@ -76,20 +76,33 @@ def init_db():
 
 def get_user_by_facebook_id(db, facebook_id: str):
     """Retrieve a user from the DB by their Facebook ID."""
-    return db.query(User).filter(User.facebook_id == facebook_id).first()
+    print(f"--- DB: Querying for user with facebook_id: {facebook_id}")
+    user = db.query(User).filter(User.facebook_id == facebook_id).first()
+    if user:
+        print(f"--- DB: Found user: {user.name}")
+    else:
+        print("--- DB: User not found.")
+    return user
 
 def create_user(db, facebook_id: str, name: str, email: str):
     """Create a new user record in the DB."""
+    print(f"--- DB: Attempting to create new user '{name}' with email '{email}'")
     new_user = User(
         facebook_id=facebook_id,
         name=name,
         email=email,
-        tier='beta' # All new users start on the 'beta' tier
+        tier='beta'
     )
-    db.add(new_user)
-    db.commit()
-    db.refresh(new_user)
-    return new_user
+    try:
+        db.add(new_user)
+        db.commit()
+        db.refresh(new_user)
+        print(f"--- DB: Successfully created and committed user with ID: {new_user.id}")
+        return new_user
+    except Exception as e:
+        print(f"--- DB: ERROR! Failed to commit new user. Rolling back. Error: {e}")
+        db.rollback()
+        return None
 
 # This allows the init_db command to be run from the terminal as before.
 # Example: python -c "from database import init_db; init_db()"
