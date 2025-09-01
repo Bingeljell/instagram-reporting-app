@@ -9,13 +9,14 @@ from dotenv import load_dotenv
 import requests
 import secrets
 
-# Note: Remove these imports after removing logger references
-# from logger_config import logger, analytics_logger
 
 from instagram_reporter import InstagramReporter
 from config import DEFAULT_API_VERSION, FACEBOOK_GRAPH_URL, MAX_DAYS_RANGE
 
 from itsdangerous import URLSafeTimedSerializer, BadSignature, SignatureExpired
+
+#DB Imports
+from database import get_db, get_user_by_facebook_id, create_user, User
 
 
 # --- 1. CONFIGURATION & SETUP ---
@@ -53,7 +54,7 @@ def verify_state(state):
 
 def get_login_url():
     state = make_state()
-    scopes = "public_profile,pages_show_list,pages_read_engagement,instagram_basic,instagram_manage_insights"
+    scopes = "public_profile,email,pages_show_list,pages_read_engagement,instagram_basic,instagram_manage_insights"
     return (
         f"https://www.facebook.com/{DEFAULT_API_VERSION}/dialog/oauth?"
         f"client_id={APP_ID}&redirect_uri={BASE_REDIRECT_URI}&state={state}&scope={scopes}"
@@ -62,50 +63,96 @@ def get_login_url():
 
 
 def process_auth():
-    if 'access_token' in st.session_state:
+    """
+    Handles the entire authentication lifecycle, now with a persistent database.
+    Performs a "get or create" operation for users.
+    Returns True if the user is successfully logged in.
+    """
+    # If the user is already fully logged in (with a DB record), we're good.
+    if 'access_token' in st.session_state and 'user_id' in st.session_state:
         return True
+
+    # This block only runs on the redirect back from Facebook
     if 'code' in st.query_params and 'state' in st.query_params:
         code = st.query_params.get("code")
         state = st.query_params.get("state")
-        st.query_params.clear()
+        
         if not verify_state(state):
-            st.session_state['auth_error'] = "Invalid login state."
+            st.session_state['auth_error'] = "Invalid login state (CSRF protection). Please try again."
+            st.rerun()
             return False
 
         token_url = f"{FACEBOOK_GRAPH_URL}/{DEFAULT_API_VERSION}/oauth/access_token"
         try:
+            # Exchange code for token
             r = requests.post(token_url, data={
-                "client_id": APP_ID,
-                "redirect_uri": BASE_REDIRECT_URI,
-                "client_secret": APP_SECRET,
-                "code": code,
-            }, timeout=10)
+                "client_id": APP_ID, "redirect_uri": BASE_REDIRECT_URI,
+                "client_secret": APP_SECRET, "code": code,
+            }, timeout=15)
             r.raise_for_status()
             data = r.json()
             access_token = data.get("access_token")
+
             if not access_token:
-                st.session_state['auth_error'] = "No access token returned."
+                st.session_state['auth_error'] = "Authentication failed: No access token returned."
+                st.rerun()
                 return False
+                
             st.session_state['access_token'] = access_token
-
             headers = {"Authorization": f"Bearer {access_token}"}
-            u = requests.get(f"{FACEBOOK_GRAPH_URL}/me?fields=name,picture", headers=headers, timeout=10).json()
-            st.session_state['user_name'] = u.get('name')
-            st.session_state['user_picture'] = (u.get('picture') or {}).get('data', {}).get('url')
+            
+            # Fetch user info from Facebook, including email and Facebook ID
+            user_info_url = f"{FACEBOOK_GRAPH_URL}/me?fields=id,name,email,picture"
+            u_info = requests.get(user_info_url, headers=headers, timeout=15).json()
+            
+            facebook_id = u_info.get('id')
+            if not facebook_id:
+                st.session_state['auth_error'] = "Could not retrieve user ID from Facebook."
+                st.rerun()
+                return False
 
-            pages = requests.get(
-                f"{FACEBOOK_GRAPH_URL}/me/accounts?fields=name,instagram_business_account{{name,username}}",
-                headers=headers, timeout=10
-            ).json().get('data', [])
+            # --- DATABASE GET OR CREATE LOGIC ---
+            db = next(get_db())
+            db_user = get_user_by_facebook_id(db, facebook_id=facebook_id)
+
+            if not db_user:
+                # User is new, create an account in our database
+                print(f"Creating new user for Facebook ID: {facebook_id}")
+                db_user = create_user(
+                    db, 
+                    facebook_id=facebook_id,
+                    name=u_info.get('name'),
+                    email=u_info.get('email')
+                )
+            else:
+                # User exists, update their last login time
+                print(f"Found existing user: {db_user.name}")
+                db_user.last_login_at = datetime.utcnow()
+                db.commit()
+
+            # --- SAVE USER INFO FROM *OUR* DB TO SESSION ---
+            st.session_state['user_id'] = db_user.id
+            st.session_state['user_tier'] = db_user.tier
+            st.session_state['user_name'] = db_user.name
+            st.session_state['user_picture'] = (u_info.get('picture') or {}).get('data', {}).get('url')
+            
+            # Fetch pages and clean up as before
+            pages = requests.get(f"{FACEBOOK_GRAPH_URL}/me/accounts?fields=name,id,instagram_business_account{{name,username}}", headers=headers, timeout=15).json().get('data', [])
             st.session_state['user_pages'] = [p for p in pages if 'instagram_business_account' in p]
             
+            db.close() # Close the database session
             
-            return True
-        except requests.RequestException:
-            st.session_state['auth_error'] = "Authentication error. Please try again."
-            return False
-    return False
+            # Use the JS redirect to clean the URL
+            redirect_script = f"<script>window.location.href = '{BASE_REDIRECT_URI}';</script>"
+            html(redirect_script)
+            st.stop()
 
+        except requests.RequestException as e:
+            st.session_state['auth_error'] = f"Authentication error: {str(e)}"
+            st.rerun()
+            return False
+            
+    return False
 
 # --- 3. MAIN APP UI ---
 st.title("📊 Social Media Analyst: 1 Click IG Report Generator")
