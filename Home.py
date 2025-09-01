@@ -153,10 +153,12 @@ def process_auth():
             db.close()
             
             # Use the JS redirect to clean the URL
-            redirect_script = f"<script>window.location.href = '{BASE_REDIRECT_URI}';</script>"
-            html(redirect_script)
-            st.stop()
+            #redirect_script = f"<script>window.location.href = '{BASE_REDIRECT_URI}';</script>"
+            # html(redirect_script)
+            # st.stop()
 
+            st.rerun()
+            
         except Exception as e:
             # --- DEBUG PROBE 3 ---
             import traceback
