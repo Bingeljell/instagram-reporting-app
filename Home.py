@@ -153,6 +153,15 @@ def process_auth():
             
     return False
 
+def increment_user_report_count(db, user_id: int):
+    """Finds a user by their ID and increments their report_count."""
+    user = db.query(User).filter(User.id == user_id).first()
+    if user:
+        user.report_count += 1
+        db.commit()
+        print(f"--- DB: Incremented report count for user: {user.name}")
+
+
 # --- 3. MAIN APP UI ---
 st.title("📊 Social Media Analyst: 1 Click IG Report Generator : DEV MODE")
 
@@ -366,6 +375,11 @@ else:
                                     st.session_state['filename'] = output_filename
                                     st.session_state['report_ready'] = True
 
+                                    # After success, get a new DB session and increment the count
+                                    db = next(get_db())
+                                    increment_user_report_count(db, user_id=st.session_state['user_id'])
+                                    db.close()
+
                                     # Analytics logging on success
                                     user_name = st.session_state.get('user_name', 'UnknownUser')
                                     page_name = selected_page_display.split(' (@')[0]
@@ -417,12 +431,11 @@ else:
                     )
                 
                 if st.button("Generate Another Report"):
-                    keys_to_keep = ['access_token', 'user_name', 'user_picture', 'user_pages']
+                    keys_to_keep = ['access_token', 'user_name', 'user_picture', 'user_pages', 'user_id', 'user_tier']
                     for key in list(st.session_state.keys()):
                         if key not in keys_to_keep:
                             del st.session_state[key]
                     st.rerun()
-            
 
     st.divider()
     if st.button("Logout"):
