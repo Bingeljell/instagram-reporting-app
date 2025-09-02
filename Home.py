@@ -147,7 +147,16 @@ def process_auth():
             # --- SAVE TO SESSION ---
             st.session_state['user_id'] = db_user.id
             st.session_state['user_tier'] = db_user.tier
-            # ... (rest of the session saving is the same)
+            
+            pages_url = f"{FACEBOOK_GRAPH_URL}/me/accounts?fields=name,id,instagram_business_account{{name,username}}&access_token={access_token}"
+            pages_response = requests.get(pages_url, headers=headers, timeout=15)
+            if pages_response.status_code == 200:
+                all_pages = pages_response.json().get('data', [])
+                eligible_pages = [page for page in all_pages if 'instagram_business_account' in page]
+                st.session_state['user_pages'] = eligible_pages
+            else:
+                st.session_state['user_pages'] = []
+           
             
             print("--- [DEBUG] User info saved to session. Preparing to redirect.")
             db.close()
