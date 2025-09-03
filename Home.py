@@ -360,7 +360,7 @@ else:
                                     sort_by_value = sort_options[sort_by_display]
                                     
                                     reporter = InstagramReporter(st.session_state['access_token'], selected_page_id)
-                                    summary_csv, raw_csv, pptx_data = reporter.generate_report(
+                                    summary_csv, raw_csv, pptx_data, pdf_data = reporter.generate_report(
                                         start_date=start_date, 
                                         end_date=end_date,
                                         report_title=report_title,
@@ -372,6 +372,7 @@ else:
                                     st.session_state['summary_csv_data'] = summary_csv
                                     st.session_state['raw_csv_data'] = raw_csv
                                     st.session_state['pptx_report_data'] = pptx_data
+                                    st.session_state['pdf_report_data'] = pdf_data
                                     st.session_state['filename'] = output_filename
                                     st.session_state['report_ready'] = True
 
@@ -411,12 +412,22 @@ else:
                 st.header("Step 2: Download Your Reports")
                 
                 dl_col1, dl_col2, dl_col3 = st.columns(3)
+
+                #Premium tier users get PowerPoint
                 with dl_col1:
-                    st.download_button(
-                        "📥 Download PowerPoint", 
-                        st.session_state['pptx_report_data'], 
-                        f"{st.session_state['filename']}.pptx"
-                    )
+                    if user_tier.lower() == 'pro' or user_tier.lower() == 'agency':
+                        # If the user is on a paid tier, show the PowerPoint button
+                        st.download_button(
+                            "⭐️ Download PowerPoint", 
+                            st.session_state['pptx_report_data'], 
+                            f"{st.session_state['filename']}.pptx",
+                            help="Download the fully editable PowerPoint version of your report."
+                        )
+                    else:
+                        # If they are on a free/beta tier, show a disabled button as an upsell
+                        st.button("⭐️ Download PowerPoint", disabled=True, help="Upgrade to a Pro account to unlock editable PowerPoint reports.")
+
+                # Scrubs get PDF & CSV - will in fact gate keep PDF also 
                 with dl_col2:
                     st.download_button(
                         "📥 Download Summary CSV", 

@@ -49,11 +49,37 @@ class User(Base):
     id = Column(Integer, primary_key=True, index=True)
     facebook_id = Column(String, unique=True, nullable=False, index=True)
     name = Column(String)
-    email = Column(String, unique=True, index=True)
-    tier = Column(String, default='beta', nullable=False)
+    email = Column(String, unique=True, index=True)    
+
+    subscription_tier = Column(String, default='beta', nullable=False)
+    subscription_expires_at = Column(DateTime, nullable=True) # For time-based trials
+    stripe_customer_id = Column(String, unique=True, nullable=True, index=True)
+    
     report_count = Column(Integer, default=0, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
     last_login_at = Column(DateTime, default=datetime.utcnow)
+
+# -- Invite codes 
+
+class InviteCode(Base):
+    __tablename__ = 'invite_codes'
+
+    id = Column(Integer, primary_key=True, index=True)
+    code_text = Column(String, unique=True, nullable=False, index=True)
+    grants_tier = Column(String, default='pro', nullable=False)
+    max_uses = Column(Integer, default=1)
+    use_count = Column(Integer, default=0)
+    expires_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+class UserInviteCode(Base):
+    """A join table to track which user used which code."""
+    __tablename__ = 'user_invite_codes'
+    
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, index=True) # Foreign key to User.id
+    invite_code_id = Column(Integer, index=True) # Foreign key to InviteCode.id
+    used_at = Column(DateTime, default=datetime.utcnow)
 
 # --- 5. DATABASE INTERACTION FUNCTIONS ---
 
