@@ -36,10 +36,13 @@ APP_SECRET = st.secrets.get("META_APP_SECRET", os.getenv("META_APP_SECRET"))
 STATE_TTL_SECONDS = 300
 _state_signer = URLSafeTimedSerializer(APP_SECRET, salt="oauth-state")
 
-if "STREAMLIT_SERVER_RUN_ON_SAVE" in os.environ:
-    BASE_REDIRECT_URI = "https://dev-smanalyst.streamlit.app/" # THIS IS DEV SERVER - PLEASE CHANGE ON LIVE
-else:
-    BASE_REDIRECT_URI = "http://localhost:8501/"
+BASE_REDIRECT_URI = (
+    st.secrets.get("FACEBOOK_REDIRECT_URI")
+    or os.getenv("FACEBOOK_REDIRECT_URI")
+    or "http://localhost:8501/"
+)
+if not BASE_REDIRECT_URI.endswith("/"):
+    BASE_REDIRECT_URI += "/"
 
 
 def make_state():
@@ -78,18 +81,31 @@ def process_auth():
 
         token_url = f"{FACEBOOK_GRAPH_URL}/{DEFAULT_API_VERSION}/oauth/access_token"
         try:
-            r = requests.post(token_url, data={
-                "client_id": APP_ID, "redirect_uri": BASE_REDIRECT_URI,
-                "client_secret": APP_SECRET, "code": code,
-            }, timeout=15)
-            r.raise_for_status()
-            data = r.json()
-            access_token = data.get("access_token")
+            r = requests.get(
+                token_url,
+                params={
+                    "client_id": APP_ID,
+                    "client_secret": APP_SECRET,
+                    "redirect_uri": BASE_REDIRECT_URI,  # MUST match login redirect exactly
+                    "code": code,
+                },
+                timeout=20,
+            )
+            data = r.json() if r.headers.get("content-type","").startswith("application/json") else {}
 
+            if r.status_code != 200:
+                err = (data or {}).get("error", {})
+                st.error(
+                    f"OAuth exchange failed: {err.get('message','Unknown error')} "
+                    f"(type={err.get('type')} code={err.get('code')} sub={err.get('error_subcode')})."
+                )
+                st.info(f"redirect_uri used: {BASE_REDIRECT_URI}")
+                st.stop()  # prevent Streamlit rerun loop
+
+            access_token = data.get("access_token")
             if not access_token:
-                st.session_state['auth_error'] = "Auth Error: No access token returned."
-                st.rerun()
-                return False
+                st.error("Auth Error: No access token returned.")
+                st.stop()
                 
             st.session_state['access_token'] = access_token
             headers = {"Authorization": f"Bearer {access_token}"}
