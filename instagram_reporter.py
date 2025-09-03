@@ -20,7 +20,7 @@ from pptx.enum.text import MSO_VERTICAL_ANCHOR
 
 #PDF imports
 from jinja2 import Environment, FileSystemLoader
-from weasyprint import HTML
+from weasyprint import HTML, CSS
 
 class InstagramReporter:
     """

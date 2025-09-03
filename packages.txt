@@ -1,4 +1,8 @@
-libglib2.0-0
-libpango-1.0-0
+# packages.txt (Debian 11 / Streamlit Cloud)
 libcairo2
+libpango-1.0-0
 libpangocairo-1.0-0
+libgdk-pixbuf2.0-0
+libffi-dev
+shared-mime-info
+fonts-dejavu-core
