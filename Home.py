@@ -176,8 +176,6 @@ def process_auth():
 
         u_info = u_info_r.json()
         facebook_id = u_info.get('id')
-        user_name = u_info.get('name')
-        user_email = u_info.get('email')
 
         if not facebook_id:
             st.session_state['auth_error'] = "Auth Error: Could not retrieve user ID from Facebook."
@@ -188,35 +186,6 @@ def process_auth():
             st.stop()
             return False
 
-        # --- DB sync (unchanged) ---
-        try:
-            db = next(get_db())
-            db_user = get_user_by_facebook_id(db, facebook_id=facebook_id)
-
-            if not db_user:
-                db_user = create_user(db, facebook_id=facebook_id, name=user_name, email=user_email)
-                if not db_user:
-                    st.session_state['auth_error'] = "DB Error: Failed to create user record."
-                    db.close()
-                    try:
-                        st.query_params.clear()
-                    except Exception:
-                        pass
-                    st.stop()
-                    return False
-            else:
-                db_user.last_login_at = datetime.utcnow()
-                db.commit()
-
-            st.session_state['user_id'] = db_user.id
-            st.session_state['user_tier'] = db_user.tier
-            st.session_state['user_name'] = db_user.name
-            st.session_state['user_picture'] = (u_info.get('picture') or {}).get('data', {}).get('url')
-        finally:
-            try:
-                db.close()
-            except Exception:
-                pass
 
         # --- Fetch pages (unchanged; params style) ---
         pages_r = requests.get(
