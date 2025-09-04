@@ -17,6 +17,18 @@ from config import DEFAULT_API_VERSION, FACEBOOK_GRAPH_URL, MAX_DAYS_RANGE
 
 from itsdangerous import URLSafeTimedSerializer, BadSignature, SignatureExpired
 
+import time  # for cooldown between exchanges
+
+def _can_exchange_now() -> bool:
+    """Simple 10s debounce to avoid hammering the OAuth exchange on reruns."""
+    now = time.time()
+    last = st.session_state.get("last_exchange_ts", 0)
+    if now - last < 10:
+        st.info("Please wait a few seconds and try again.")
+        return False
+    st.session_state["last_exchange_ts"] = now
+    return True
+
 
 # --- 1. CONFIGURATION & SETUP ---
 st.set_page_config(page_title="Social Media Analyst", page_icon="📊", layout="centered")
@@ -35,10 +47,13 @@ APP_SECRET = st.secrets.get("META_APP_SECRET", os.getenv("META_APP_SECRET"))
 STATE_TTL_SECONDS = 300
 _state_signer = URLSafeTimedSerializer(APP_SECRET, salt="oauth-state")
 
-if "STREAMLIT_SERVER_RUN_ON_SAVE" in os.environ:
-    BASE_REDIRECT_URI = "https://socialmedia-analyst.streamlit.app/"
-else:
-    BASE_REDIRECT_URI = "http://localhost:8501/"
+BASE_REDIRECT_URI = (
+    st.secrets.get("FACEBOOK_REDIRECT_URI")
+    or os.getenv("FACEBOOK_REDIRECT_URI")
+    or "http://localhost:8501/"
+)
+if not BASE_REDIRECT_URI.endswith("/"):
+    BASE_REDIRECT_URI += "/"
 
 
 def make_state():
@@ -62,49 +77,173 @@ def get_login_url():
 
 
 def process_auth():
-    if 'access_token' in st.session_state:
+    """
+    Handles the entire authentication lifecycle, with debounce + friendlier errors.
+    Assumes APP_ID, APP_SECRET, BASE_REDIRECT_URI, FACEBOOK_GRAPH_URL, DEFAULT_API_VERSION,
+    verify_state(), get_db(), get_user_by_facebook_id(), create_user(), datetime, html, st, requests exist.
+    """
+    # Already authenticated?
+    if 'access_token' in st.session_state and 'user_id' in st.session_state:
         return True
+
+    # Only handle the OAuth callback here
     if 'code' in st.query_params and 'state' in st.query_params:
         code = st.query_params.get("code")
         state = st.query_params.get("state")
-        st.query_params.clear()
+
+        # CSRF guard
         if not verify_state(state):
-            st.session_state['auth_error'] = "Invalid login state."
+            st.session_state['auth_error'] = "Invalid login state (CSRF protection)."
+            try:
+                st.query_params.clear()
+            except Exception:
+                pass
+            st.stop()
             return False
 
+        # Cooldown to avoid rapid retries on reruns
+        if not _can_exchange_now():
+            st.stop()
+            return False
+
+        # --- Exchange code -> access_token (GET; no raise_for_status) ---
         token_url = f"{FACEBOOK_GRAPH_URL}/{DEFAULT_API_VERSION}/oauth/access_token"
-        try:
-            r = requests.post(token_url, data={
+        r = requests.get(
+            token_url,
+            params={
                 "client_id": APP_ID,
-                "redirect_uri": BASE_REDIRECT_URI,
                 "client_secret": APP_SECRET,
+                "redirect_uri": BASE_REDIRECT_URI,  # MUST match login redirect exactly
                 "code": code,
-            }, timeout=10)
-            r.raise_for_status()
-            data = r.json()
-            access_token = data.get("access_token")
-            if not access_token:
-                st.session_state['auth_error'] = "No access token returned."
+            },
+            timeout=20,
+        )
+        data = {}
+        try:
+            if r.headers.get("content-type","").startswith("application/json"):
+                data = r.json()
+        except Exception:
+            data = {}
+
+        if r.status_code != 200:
+            err = (data or {}).get("error", {})
+            fbtrace = (data or {}).get("fbtrace_id") or r.headers.get("x-fb-trace-id")
+
+            # If Meta temporarily limited the account (368), set a cooldown to avoid hammering
+            if err.get("code") == 368:
+                st.session_state["fb_blocked_until"] = time.time() + 15 * 60  # 15 minutes
+                st.warning(
+                    "Facebook temporarily limited login attempts for this account. Please try again later."
+                )
+                st.info(f"fbtrace_id={fbtrace} | redirect_uri used: {BASE_REDIRECT_URI}")
+                st.stop()
                 return False
-            st.session_state['access_token'] = access_token
 
-            headers = {"Authorization": f"Bearer {access_token}"}
-            u = requests.get(f"{FACEBOOK_GRAPH_URL}/me?fields=name,picture", headers=headers, timeout=10).json()
-            st.session_state['user_name'] = u.get('name')
-            st.session_state['user_picture'] = (u.get('picture') or {}).get('data', {}).get('url')
-
-            pages = requests.get(
-                f"{FACEBOOK_GRAPH_URL}/me/accounts?fields=name,instagram_business_account{{name,username}}",
-                headers=headers, timeout=10
-            ).json().get('data', [])
-            st.session_state['user_pages'] = [p for p in pages if 'instagram_business_account' in p]
-            
-            
-            return True
-        except requests.RequestException:
-            st.session_state['auth_error'] = "Authentication error. Please try again."
+            # Other errors: show once and stop (prevents loop)
+            st.error(
+                f"OAuth exchange failed: {err.get('message','Unknown error')} "
+                f"(type={err.get('type')} code={err.get('code')} sub={err.get('error_subcode')}, fbtrace_id={fbtrace})."
+            )
+            st.info(f"redirect_uri used: {BASE_REDIRECT_URI}")
+            st.stop()
             return False
+
+        access_token = data.get("access_token")
+        if not access_token:
+            st.error("Auth Error: No access token returned.")
+            st.stop()
+            return False
+
+        st.session_state['access_token'] = access_token
+
+        # --- Fetch user profile (params style is most reliable) ---
+        u_info_r = requests.get(
+            f"{FACEBOOK_GRAPH_URL}/me",
+            params={"fields": "id,name,email,picture", "access_token": access_token},
+            timeout=15
+        )
+        if u_info_r.status_code != 200:
+            try:
+                ud = u_info_r.json()
+            except Exception:
+                ud = {}
+            err = (ud or {}).get("error", {})
+            st.error(
+                f"Auth Error: Could not retrieve user profile. (code={err.get('code')} sub={err.get('error_subcode')})"
+            )
+            st.stop()
+            return False
+
+        u_info = u_info_r.json()
+        facebook_id = u_info.get('id')
+        user_name = u_info.get('name')
+        user_email = u_info.get('email')
+
+        if not facebook_id:
+            st.session_state['auth_error'] = "Auth Error: Could not retrieve user ID from Facebook."
+            try:
+                st.query_params.clear()
+            except Exception:
+                pass
+            st.stop()
+            return False
+
+        # --- DB sync (unchanged) ---
+        try:
+            db = next(get_db())
+            db_user = get_user_by_facebook_id(db, facebook_id=facebook_id)
+
+            if not db_user:
+                db_user = create_user(db, facebook_id=facebook_id, name=user_name, email=user_email)
+                if not db_user:
+                    st.session_state['auth_error'] = "DB Error: Failed to create user record."
+                    db.close()
+                    try:
+                        st.query_params.clear()
+                    except Exception:
+                        pass
+                    st.stop()
+                    return False
+            else:
+                db_user.last_login_at = datetime.utcnow()
+                db.commit()
+
+            st.session_state['user_id'] = db_user.id
+            st.session_state['user_tier'] = db_user.tier
+            st.session_state['user_name'] = db_user.name
+            st.session_state['user_picture'] = (u_info.get('picture') or {}).get('data', {}).get('url')
+        finally:
+            try:
+                db.close()
+            except Exception:
+                pass
+
+        # --- Fetch pages (unchanged; params style) ---
+        pages_r = requests.get(
+            f"{FACEBOOK_GRAPH_URL}/me/accounts",
+            params={"fields": "name,id,instagram_business_account{name,username}", "access_token": access_token},
+            timeout=15
+        )
+        if pages_r.status_code == 200:
+            all_pages = pages_r.json().get('data', [])
+            eligible = [p for p in all_pages if 'instagram_business_account' in p]
+            st.session_state['user_pages'] = eligible
+        else:
+            st.session_state['user_pages'] = []
+
+        # ✅ Clear callback params and rerun to a clean URL (prevents code-reuse loops)
+        try:
+            st.query_params.clear()
+            st.rerun()
+        except Exception:
+            html(f"<script>window.location.href = '{BASE_REDIRECT_URI}';</script>")
+            st.stop()
+
+        return True
+
+    # No callback params; not authenticated yet
     return False
+
 
 
 # --- 3. MAIN APP UI ---
@@ -124,6 +263,13 @@ if not is_logged_in:
     
     Please log in with your Facebook account to generate reports for the Instagram Business Accounts you manage.
     """)
+
+    blocked_until = st.session_state.get("fb_blocked_until")
+    if blocked_until and time.time() < blocked_until:
+        remaining = int(blocked_until - time.time())
+        mins, secs = divmod(max(remaining, 0), 60)
+        st.warning(f"Facebook temporarily limited login. Please wait {mins}m {secs}s and try again.")
+        st.stop()
 
     login_url = get_login_url()
     
