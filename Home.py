@@ -159,7 +159,7 @@ def process_auth():
         # --- Fetch user profile (params style is most reliable) ---
         u_info_r = requests.get(
             f"{FACEBOOK_GRAPH_URL}/me",
-            params={"fields": "id,name,email,picture", "access_token": access_token},
+            params={"fields": "id,name,email,picture{url}", "access_token": access_token},
             timeout=15
         )
         if u_info_r.status_code != 200:
@@ -185,7 +185,16 @@ def process_auth():
                 pass
             st.stop()
             return False
+        st.session_state['user_id'] = facebook_id
+        st.session_state['user_name'] = u_info.get('name')
 
+        pic = None
+        picture_field = u_info.get('picture')
+        if isinstance(picture_field, dict):
+            data = picture_field.get('data') or {}
+            pic = data.get('url') or picture_field.get('url')
+
+        st.session_state['user_picture'] = pic
 
         # --- Fetch pages (unchanged; params style) ---
         pages_r = requests.get(
@@ -205,7 +214,7 @@ def process_auth():
             st.query_params.clear()
             st.rerun()
         except Exception:
-            html(f"<script>window.location.href = '{BASE_REDIRECT_URI}';</script>")
+            components.v1.html(f"<script>window.location.href = '{BASE_REDIRECT_URI}';</script>")
             st.stop()
 
         return True
@@ -286,6 +295,18 @@ if not is_logged_in:
             - **Your access token is temporary.** It's stored securely in your browser session and is gone when you close the tab.
             - **We only request the permissions we need.** We ask for access to your pages and Instagram data solely to generate your reports.
         """)
+
+    # Temp Debug for UAT
+    with st.expander("🔧 Debug (temporary)"):
+        st.write({
+            "has_code": "code" in st.query_params,
+            "has_state": "state" in st.query_params,
+            "has_access_token": "access_token" in st.session_state,
+            "has_user_id": "user_id" in st.session_state,
+            "redirect_uri_used": BASE_REDIRECT_URI,
+            "last_exchange_ts": st.session_state.get("last_exchange_ts"),
+            "fb_blocked_until": st.session_state.get("fb_blocked_until"),
+        })
 
 else:
     # --- LOGGED IN VIEW ---
