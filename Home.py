@@ -234,7 +234,7 @@ def process_auth():
             st.rerun()
         except Exception:
             # Fallback if query_params API isn't available
-            html(f"<script>window.location.href = '{BASE_REDIRECT_URI}';</script>")
+            components.html(f"<script>window.location.href = '{BASE_REDIRECT_URI}';</script>")
             st.stop()
 
         return True
@@ -321,7 +321,7 @@ if not is_logged_in:
 
 else:
     # --- LOGGED IN VIEW ---
-    col1, col2 = st.columns([0.85, 0.15])
+    col1, col2, col3 = st.columns([0.6,0.2, 0.2])
     with col1:
         st.success(f"Logged in as **{st.session_state.get('user_name', 'User')}**")
         
@@ -329,8 +329,27 @@ else:
         if st.session_state.get('user_picture'):
             st.image(st.session_state['user_picture'])
     
+    with col3:
+        st.session_state['user_tier'] = db_user.subscription_tier
+    
     st.divider()
 
+    # Invite code rdemption
+    with st.expander("Have an invite or upgrade code?"):
+        in_code = st.text_input("Enter code")
+        if st.button("Redeem"):
+            ok, msg = redeem_invite_code(db, db_user, in_code.strip())
+            if ok:
+                st.success(f"Upgraded to {msg}!")
+                st.session_state['user_tier'] = msg
+        else:
+            st.error(msg)
+    
+            
+    st.divider()
+
+    user_tier = (st.session_state.get('user_tier') or 'beta').lower()
+    ppt_allowed = user_tier in ('pro', 'agency')
     # Show any generation errors
     if 'generation_error' in st.session_state:
         st.error(st.session_state.generation_error)
@@ -448,15 +467,21 @@ else:
                                             f.write(logo_file.getbuffer())
                                     
                                     sort_by_value = sort_options[sort_by_display]
+
+                                    user_tier = (st.session_state.get('user_tier') or 'beta').lower()
+                                    include_ppt = user_tier in ('pro', 'agency')   # skip PPT for free/beta
+                                    include_pdf = True   
                                     
                                     reporter = InstagramReporter(st.session_state['access_token'], selected_page_id)
-                                    summary_csv, raw_csv, pptx_data, pdf_data = reporter.generate_report(
+                                    summary_csv, raw_csv, pdf_data, pptx_data = reporter.generate_report(
                                         start_date=start_date, 
                                         end_date=end_date,
                                         report_title=report_title,
                                         logo_path=logo_path,
                                         sort_metric=sort_by_value,
-                                        sort_metric_display=sort_by_display
+                                        sort_metric_display=sort_by_display,
+                                        include_pdf=include_pdf,
+                                        include_ppt=include_ppt,
                                     )
                                     
                                     st.session_state['summary_csv_data'] = summary_csv
@@ -500,31 +525,40 @@ else:
             if 'report_ready' in st.session_state:
                 st.divider()
                 st.header("Step 2: Download Your Reports")
+
+                user_tier = (st.session_state.get('user_tier') or 'beta').lower()
+                ppt_allowed = user_tier in ('pro', 'agency')    
                 
-                dl_col1, dl_col2, dl_col3 = st.columns(3)
+                dl_col1, dl_col2, dl_col3, dl_col4 = st.columns(4)
 
                 #Premium tier users get PowerPoint
                 with dl_col1:
-                    if user_tier.lower() == 'pro' or user_tier.lower() == 'agency':
-                        # If the user is on a paid tier, show the PowerPoint button
+                    if ppt_allowed and st.session_state.get('pptx_report_data'):
                         st.download_button(
-                            "⭐️ Download PowerPoint", 
-                            st.session_state['pptx_report_data'], 
+                            "⭐️ Download PowerPoint",
+                            st.session_state['pptx_report_data'],
                             f"{st.session_state['filename']}.pptx",
-                            help="Download the fully editable PowerPoint version of your report."
+                            help="Editable PPT is included in paid tiers."
                         )
                     else:
-                        # If they are on a free/beta tier, show a disabled button as an upsell
-                        st.button("⭐️ Download PowerPoint", disabled=True, help="Upgrade to a Pro account to unlock editable PowerPoint reports.")
+                        st.button(
+                            "⭐️ Download PowerPoint",
+                            disabled=True,
+                            help="Upgrade to Pro to unlock PowerPoint."
+                        )
+                with dl_col2:
+                    st.download_button("📄 Download PDF",
+                        st.session_state['pdf_report_data'],
+                        f"{st.session_state['filename']}.pdf")
 
                 # Scrubs get PDF & CSV - will in fact gate keep PDF also 
-                with dl_col2:
+                with dl_col3:
                     st.download_button(
                         "📥 Download Summary CSV", 
                         st.session_state['summary_csv_data'], 
                         f"{st.session_state['filename']}_Summary.csv"
                     )
-                with dl_col3:
+                with dl_col4:
                     st.download_button(
                         "📥 Download Raw Data CSV", 
                         st.session_state['raw_csv_data'], 

@@ -1,8 +1,8 @@
 # database.py
 
 import os
-from sqlalchemy import create_engine, Column, Integer, String, DateTime
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy import create_engine, Column, Integer, String, DateTime, ForeignKey, synonym, func, or_, update
+from sqlalchemy.orm import sessionmaker, relationship
 from sqlalchemy.ext.declarative import declarative_base
 from datetime import datetime
 from dotenv import load_dotenv
@@ -51,7 +51,8 @@ class User(Base):
     name = Column(String)
     email = Column(String, unique=True, index=True)    
 
-    subscription_tier = Column(String, default='beta', nullable=False)
+    subscription_tier = Column('tier', String, default='beta', nullable=False)
+    tier = synonym('subscription_tier')
     subscription_expires_at = Column(DateTime, nullable=True) # For time-based trials
     stripe_customer_id = Column(String, unique=True, nullable=True, index=True)
     
@@ -62,24 +63,21 @@ class User(Base):
 # -- Invite codes 
 
 class InviteCode(Base):
-    __tablename__ = 'invite_codes'
-
-    id = Column(Integer, primary_key=True, index=True)
+    __tablename__ = "invite_codes"
+    id = Column(Integer, primary_key=True)
     code_text = Column(String, unique=True, nullable=False, index=True)
-    grants_tier = Column(String, default='pro', nullable=False)
-    max_uses = Column(Integer, default=1)
-    use_count = Column(Integer, default=0)
-    expires_at = Column(DateTime, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    grants_tier = Column(String, nullable=False)          # e.g., 'pro' | 'agency'
+    max_uses = Column(Integer, nullable=True)
+    use_count = Column(Integer, nullable=False, server_default='0')
+    expires_at = Column(DateTime(timezone=True), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
 
 class UserInviteCode(Base):
-    """A join table to track which user used which code."""
-    __tablename__ = 'user_invite_codes'
-    
-    id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, index=True) # Foreign key to User.id
-    invite_code_id = Column(Integer, index=True) # Foreign key to InviteCode.id
-    used_at = Column(DateTime, default=datetime.utcnow)
+    __tablename__ = "user_invite_codes"
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    invite_code_id = Column(Integer, ForeignKey("invite_codes.id"), nullable=False)
+    used_at = Column(DateTime(timezone=True), server_default=func.now())
 
 # --- 5. DATABASE INTERACTION FUNCTIONS ---
 
@@ -117,7 +115,7 @@ def create_user(db, facebook_id: str, name: str, email: str):
         facebook_id=facebook_id,
         name=name,
         email=email,
-        tier='beta'
+        subscription_tier='beta'
     )
     try:
         db.add(new_user)
@@ -130,5 +128,26 @@ def create_user(db, facebook_id: str, name: str, email: str):
         db.rollback()
         return None
 
-# This allows the init_db command to be run from the terminal as before.
-# Example: python -c "from database import init_db; init_db()"
+def redeem_invite_code(db, user: User, code_text: str):
+    # single-row atomic UPDATE … RETURNING to avoid race conditions on use_count
+    stmt = (
+        update(InviteCode)
+        .where(InviteCode.code_text == code_text)
+        .where(or_(InviteCode.expires_at.is_(None), InviteCode.expires_at > func.now()))
+        .where(or_(InviteCode.max_uses.is_(None), InviteCode.use_count < InviteCode.max_uses))
+        .values(use_count=InviteCode.use_count + 1)
+        .returning(InviteCode.id, InviteCode.grants_tier)
+    )
+    row = db.execute(stmt).first()
+    if not row:
+        return False, "Invalid or expired code, or usage limit reached."
+
+    invite_code_id, grants_tier = row
+    # upgrade user tier
+    user.subscription_tier = grants_tier
+    db.add(UserInviteCode(user_id=user.id, invite_code_id=invite_code_id))
+    db.commit()
+    db.refresh(user)
+    return True, grants_tier
+
+# Run : python -c "from database import init_db; init_db()"

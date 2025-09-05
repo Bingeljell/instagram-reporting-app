@@ -485,7 +485,17 @@ class InstagramReporter:
         df.to_csv(string_buffer, index=False)
         return string_buffer.getvalue()
     
-    def generate_report(self, start_date: datetime.date, end_date: datetime.date, report_title: str, logo_path: str, sort_metric: str, sort_metric_display: str):
+    def generate_report(
+        self,
+        start_date: datetime.date,
+        end_date: datetime.date, 
+        report_title: str, 
+        logo_path: str, 
+        sort_metric: str, 
+        sort_metric_display: str,
+        influce_pdf: bool = True,
+        include_ppt: bool = True,
+        ):
         """
         The main method to generate all reports in-memory.
         Returns:
@@ -517,7 +527,7 @@ class InstagramReporter:
             start_date.strftime('%B %d, %Y'), 
             end_date.strftime('%B %d, %Y'),
             sort_metric_display
-        )
+        ) if include_pdf else None
         
         print("🖼️  Creating PowerPoint presentation in memory...")
         pptx_data = self.create_powerpoint_report(
@@ -525,7 +535,7 @@ class InstagramReporter:
             title_text=report_title, 
             logo_path=logo_path,
             sort_metric_display=sort_metric_display
-        )
+        ) if include_ppt else None
         
         print("\n✅ All reports generated successfully in memory.")
         
