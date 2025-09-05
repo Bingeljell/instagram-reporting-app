@@ -9,14 +9,17 @@ from dotenv import load_dotenv
 import requests
 import secrets
 import time
-
-from instagram_reporter import InstagramReporter
+from instagram_reporter import InstagramReporter 
 from config import DEFAULT_API_VERSION, FACEBOOK_GRAPH_URL, MAX_DAYS_RANGE
+from itsdangerous import URLSafeTimedSerializer, BadSignature, SignatureExpired #Security
+from database import get_db, get_user_by_facebook_id, create_user, User #DB Import
+from settings import load_config
 
-from itsdangerous import URLSafeTimedSerializer, BadSignature, SignatureExpired
-
-#DB Imports
-from database import get_db, get_user_by_facebook_id, create_user, User
+cfg = load_config()
+APP_ENV = cfg["APP_ENV"]
+APP_ID = cfg["META_APP_ID"]
+APP_SECRET = cfg["META_APP_SECRET"]
+REDIRECT_URI = cfg["FACEBOOK_REDIRECT_URI"]
 
 
 # --- 1. CONFIGURATION & SETUP ---
@@ -34,6 +37,10 @@ APP_ID = st.secrets.get("META_APP_ID", os.getenv("META_APP_ID"))
 APP_SECRET = st.secrets.get("META_APP_SECRET", os.getenv("META_APP_SECRET"))
 
 STATE_TTL_SECONDS = 300
+if not APP_SECRET:
+    st.error("Missing APP_SECRET. Check Streamlit secrets or your .env file.")
+    st.stop()
+
 _state_signer = URLSafeTimedSerializer(APP_SECRET, salt="oauth-state")
 
 BASE_REDIRECT_URI = st.secrets.get("FACEBOOK_REDIRECT_URI") or "http://localhost:8501/"
