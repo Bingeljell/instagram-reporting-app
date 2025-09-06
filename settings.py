@@ -44,33 +44,44 @@ def _with_trailing_slash(url: str) -> str:
     return url if not url or url.endswith("/") else url + "/"
 
 
-def load_config() -> Dict[str, str]:
-    """Return a dict of config values. Super small and predictable.
-
-    Priority:
-      1) If running on Streamlit Cloud and st.secrets exist, use those.
-      2) Else, infer env from git branch and load `.env.<env>` + optional `.env.local`.
+def load_config() -> dict:
     """
-    # 1) Streamlit Cloud (per-app secrets)
-    if st is not None and getattr(st, "secrets", None):
-        s = st.secrets
-        return {
-            "APP_ENV": str(s.get("APP_ENV", "production")).lower(),
-            "FACEBOOK_APP_ID": s.get("FACEBOOK_APP_ID", ""),
-            "FACEBOOK_APP_SECRET": s.get("FACEBOOK_APP_SECRET", ""),
-            "FACEBOOK_REDIRECT_URI": _with_trailing_slash(s.get("FACEBOOK_REDIRECT_URI", "")),
-        }
+    Prefer st.secrets on Streamlit Cloud, BUT fall back silently to env files
+    if secrets.toml is missing locally. You can force env files with PREFER_ENV_FILES=1.
+    """
+    prefer_st_secrets = os.getenv("PREFER_ENV_FILES") not in ("1", "true", "True")
 
-    # 2) Local dev: branch-driven env files
-    env = current_env()
-    load_dotenv(f".env.{env}", override=False)
-    load_dotenv(".env.local", override=True)  # optional machine-only tweaks
+    # --- Try Streamlit secrets (guarded) ---
+    if prefer_st_secrets and st is not None:
+        try:
+            s = st.secrets  # this may raise if no secrets.toml
+            return {
+                "APP_ENV": str(s.get("APP_ENV", "production")).lower(),
+                "FACEBOOK_APP_ID": s.get("FACEBOOK_APP_ID", ""),
+                "FACEBOOK_APP_SECRET": s.get("FACEBOOK_APP_SECRET", ""),
+                "FACEBOOK_REDIRECT_URI": _with_trailing_slash(s.get("FACEBOOK_REDIRECT_URI", "")),
+            }
+        except Exception:
+            pass  # no secrets.toml locally -> fall back to env files
+
+    # --- Env files/local ---
+    from pathlib import Path
+    here = Path(__file__).resolve().parent
+    app_env = os.getenv("APP_ENV", "development").lower()
+
+    # Accept .env.development, .env.dev, or .env
+    for name in (f".env.{app_env}", f".env.{app_env[:3]}", ".env"):
+        p = here / name
+        if p.exists():
+            load_dotenv(p, override=False)
+            break
+    load_dotenv(here / ".env.local", override=True)
 
     return {
-        "APP_ENV": env,
-        "FACEBOOK_APP_ID": os.getenv("FACEBOOK_APP_ID", ""),
-        "FACEBOOK_APP_SECRET": os.getenv("FACEBOOK_APP_SECRET", ""),
-        "FACEBOOK_REDIRECT_URI": _with_trailing_slash(os.getenv("FACEBOOK_REDIRECT_URI", "")),
+        "APP_ENV": app_env,
+        "FACEBOOK_APP_ID": os.getenv("FACEBOOK_APP_ID", os.getenv("META_APP_ID", "")),
+        "FACEBOOK_APP_SECRET": os.getenv("FACEBOOK_APP_SECRET", os.getenv("META_APP_SECRET", "")),
+        "FACEBOOK_REDIRECT_URI": _with_trailing_slash(os.getenv("FACEBOOK_REDIRECT_URI", "http://localhost:8501/")),
     }
 
 

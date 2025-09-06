@@ -1,30 +1,53 @@
 # Home.py
 
+import os, tempfile, requests, secrets, time
+from pathlib import Path
+from datetime import datetime, timedelta, timezone
 import streamlit as st
 import streamlit.components.v1 as components
-import os
-import tempfile
-from datetime import datetime, timedelta
 from dotenv import load_dotenv
-import requests
-import secrets
-import time
-from instagram_reporter import InstagramReporter 
+from itsdangerous import URLSafeTimedSerializer, BadSignature, SignatureExpired
+
+from settings import load_config, current_env
+ 
+
+# --- load env files BEFORE importing anything from `database` ---
+ENV = os.getenv("APP_ENV") or current_env()
+here = Path(__file__).resolve().parent
+for name in (f".env.{ENV}", ".env.development", ".env.dev", ".env"):
+    p = here / name
+    if p.exists():
+        load_dotenv(p, override=False)
+        break
+load_dotenv(here / ".env.local", override=True)  # optional overrides
+
+from database import engine, get_db, get_user_by_facebook_id, create_user, User
+
+
+u = engine.url
+st.sidebar.write({
+    "ENV": ENV,
+    "SUPABASE_USER set": bool(os.getenv("SUPABASE_USER")),
+    "SUPABASE_HOST set": bool(os.getenv("SUPABASE_HOST")),
+})
+from instagram_reporter import InstagramReporter
 from config import DEFAULT_API_VERSION, FACEBOOK_GRAPH_URL, MAX_DAYS_RANGE
-from itsdangerous import URLSafeTimedSerializer, BadSignature, SignatureExpired #Security
-from database import get_db, get_user_by_facebook_id, create_user, User #DB Import
-from settings import load_config
 
 cfg = load_config()
 APP_ENV = cfg["APP_ENV"]
-APP_ID = cfg["META_APP_ID"]
-APP_SECRET = cfg["META_APP_SECRET"]
-REDIRECT_URI = cfg["FACEBOOK_REDIRECT_URI"]
+APP_ID = cfg["FACEBOOK_APP_ID"]
+APP_SECRET = cfg["FACEBOOK_APP_SECRET"]
+BASE_REDIRECT_URI = cfg["FACEBOOK_REDIRECT_URI"]
 
 
 # --- 1. CONFIGURATION & SETUP ---
 st.set_page_config(page_title="Social Media Analyst", page_icon="📊", layout="centered")
 load_dotenv()
+
+STATE_TTL_SECONDS = 300
+if not APP_SECRET:
+    st.error("Missing APP_SECRET. Check Streamlit secrets or your .env file.")
+    st.stop()
 
 st.markdown("""
 <style>
@@ -33,8 +56,6 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-APP_ID = st.secrets.get("META_APP_ID", os.getenv("META_APP_ID"))
-APP_SECRET = st.secrets.get("META_APP_SECRET", os.getenv("META_APP_SECRET"))
 
 STATE_TTL_SECONDS = 300
 if not APP_SECRET:
@@ -43,7 +64,6 @@ if not APP_SECRET:
 
 _state_signer = URLSafeTimedSerializer(APP_SECRET, salt="oauth-state")
 
-BASE_REDIRECT_URI = st.secrets.get("FACEBOOK_REDIRECT_URI") or "http://localhost:8501/"
 if not BASE_REDIRECT_URI.endswith("/"):
     BASE_REDIRECT_URI += "/"
 
@@ -207,13 +227,16 @@ def process_auth():
                     st.stop()
                     return False
             else:
-                db_user.last_login_at = datetime.utcnow()
+                db_user.last_login_at = datetime.now(timezone.utc)
                 db.commit()
-
-            st.session_state['user_id'] = db_user.id
-            st.session_state['user_tier'] = db_user.tier
-            st.session_state['user_name'] = db_user.name
-            st.session_state['user_picture'] = (u_info.get('picture') or {}).get('data', {}).get('url')
+                db.refresh(db_user)
+                st.session_state['user_id'] = db_user.id
+                st.session_state['user_name'] = db_user.name
+                st.session_state['user_picture'] = (u_info.get('picture') or {}).get('data', {}).get('url')
+                st.session_state['user_tier'] = (db_user.tier or "beta").lower()
+                st.session_state["subscription_expires_at"] = (
+                    db_user.subscription_expires_at.isoformat() if db_user.subscription_expires_at else None
+                )
         finally:
             try:
                 db.close()
@@ -328,31 +351,17 @@ if not is_logged_in:
 
 else:
     # --- LOGGED IN VIEW ---
-    col1, col2, col3 = st.columns([0.6,0.2, 0.2])
+    col1, col2, col3 = st.columns([0.6,0.3, 0.1])
     with col1:
         st.success(f"Logged in as **{st.session_state.get('user_name', 'User')}**")
         
     with col2:
         if st.session_state.get('user_picture'):
             st.image(st.session_state['user_picture'])
-    
     with col3:
-        st.session_state['user_tier'] = db_user.subscription_tier
-    
-    st.divider()
+        user_tier = (st.session_state.get("user_tier") or "beta").lower()
+        st.write(f"**Tier:** {user_tier}")
 
-    # Invite code rdemption
-    with st.expander("Have an invite or upgrade code?"):
-        in_code = st.text_input("Enter code")
-        if st.button("Redeem"):
-            ok, msg = redeem_invite_code(db, db_user, in_code.strip())
-            if ok:
-                st.success(f"Upgraded to {msg}!")
-                st.session_state['user_tier'] = msg
-        else:
-            st.error(msg)
-    
-            
     st.divider()
 
     user_tier = (st.session_state.get('user_tier') or 'beta').lower()

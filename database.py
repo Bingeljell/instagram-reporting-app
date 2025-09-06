@@ -1,46 +1,51 @@
 # database.py
 
-import os
-from sqlalchemy import create_engine, Column, Integer, String, DateTime, ForeignKey, synonym, func, or_, update
-from sqlalchemy.orm import sessionmaker, relationship
-from sqlalchemy.ext.declarative import declarative_base
-from datetime import datetime
-from dotenv import load_dotenv
+
 from urllib.parse import quote_plus
+from datetime import datetime
+import os
+import psycopg2
+from sqlalchemy import create_engine, Column, Integer, String, DateTime, ForeignKey, func, or_, update
+from sqlalchemy.orm import sessionmaker, relationship, synonym, declarative_base
 
-# --- 1. LOAD ENVIRONMENT VARIABLES ---
-load_dotenv()
 
-# --- 2. ROBUST DATABASE CONNECTION SETUP ---
-# Fetch individual, safe connection parameters from the .env file
-USER = os.getenv("SUPABASE_USER")
-PASSWORD = os.getenv("SUPABASE_PASSWORD")
-HOST = os.getenv("SUPABASE_HOST")
-PORT = os.getenv("SUPABASE_PORT")
-DBNAME = os.getenv("SUPABASE_DBNAME")
 
-# Check if all necessary variables are present
-if not all([USER, PASSWORD, HOST, PORT, DBNAME]):
-    raise ValueError("Missing one or more required Supabase environment variables (SUPABASE_USER, SUPABASE_PASSWORD, etc.)")
+USER = os.getenv("SUPABASE_USER")                      
+PASSWORD = os.getenv("SUPABASE_PASSWORD", "")
+HOST = os.getenv("SUPABASE_HOST")                      
+PORT = int(os.getenv("SUPABASE_PORT", "6543"))
+DBNAME = os.getenv("SUPABASE_DB") or os.getenv("SUPABASE_DBNAME") or "postgres"
 
-# URL-encode the password to handle any special characters safely.
-# This is a best practice even if the password is URL-safe.
-encoded_password = quote_plus(PASSWORD)
+# Basic validation
+missing = [k for k, v in {
+    "SUPABASE_USER": USER,
+    "SUPABASE_PASSWORD": PASSWORD,
+    "SUPABASE_HOST": HOST,
+}.items() if not v]
+if missing:
+    raise ValueError(f"Missing Supabase settings: {', '.join(missing)}")
 
-# Construct the final, safe DATABASE_URL for SQLAlchemy
-DATABASE_URL = f"postgresql://{USER}:{encoded_password}@{HOST}:{PORT}/{DBNAME}"
+def _connect():
+# Connect exactly like the working db_connection_test.py
+    return psycopg2.connect(
+        user=USER,
+        password=PASSWORD,
+        host=HOST,
+        port=PORT,
+        dbname=DBNAME,
+        sslmode="require",
+    )
+engine = create_engine("postgresql+psycopg2://", pool_pre_ping=True, creator=_connect)
+SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
+Base = declarative_base()
 
-# --- 3. SQLAlchemy ENGINE & SESSION SETUP ---
-# This part remains the same, but now uses our robustly constructed URL.
-try:
-    engine = create_engine(DATABASE_URL)
-    SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-    Base = declarative_base()
-except Exception as e:
-    print("❌ Failed to create SQLAlchemy engine. Please check your DATABASE_URL.")
-    print(f"Error: {e}")
-    # Exit or handle the error appropriately if the script continues
-    exit()
+def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
 
 # --- 4. USER TABLE DEFINITION ("MODEL") ---
 class User(Base):
@@ -78,16 +83,6 @@ class UserInviteCode(Base):
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     invite_code_id = Column(Integer, ForeignKey("invite_codes.id"), nullable=False)
     used_at = Column(DateTime(timezone=True), server_default=func.now())
-
-# --- 5. DATABASE INTERACTION FUNCTIONS ---
-
-def get_db():
-    """Dependency to get a DB session for a single transaction."""
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
 
 def init_db():
     """Create the database tables if they don't exist."""

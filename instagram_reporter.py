@@ -493,7 +493,7 @@ class InstagramReporter:
         logo_path: str, 
         sort_metric: str, 
         sort_metric_display: str,
-        influce_pdf: bool = True,
+        include_pdf: bool = True,
         include_ppt: bool = True,
         ):
         """
