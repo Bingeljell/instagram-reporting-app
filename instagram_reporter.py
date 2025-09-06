@@ -18,6 +18,10 @@ from pptx.dml.color import RGBColor
 from pptx.enum.dml import MSO_THEME_COLOR
 from pptx.enum.text import MSO_VERTICAL_ANCHOR
 
+#PDF imports
+from jinja2 import Environment, FileSystemLoader
+from weasyprint import HTML, CSS
+
 class InstagramReporter:
     """
     A class to fetch, analyze, and generate reports for an Instagram Business Account.
@@ -481,7 +485,17 @@ class InstagramReporter:
         df.to_csv(string_buffer, index=False)
         return string_buffer.getvalue()
     
-    def generate_report(self, start_date: datetime.date, end_date: datetime.date, report_title: str, logo_path: str, sort_metric: str, sort_metric_display: str):
+    def generate_report(
+        self,
+        start_date: datetime.date,
+        end_date: datetime.date, 
+        report_title: str, 
+        logo_path: str, 
+        sort_metric: str, 
+        sort_metric_display: str,
+        include_pdf: bool = True,
+        include_ppt: bool = True,
+        ):
         """
         The main method to generate all reports in-memory.
         Returns:
@@ -503,10 +517,17 @@ class InstagramReporter:
             raise ValueError("Could not generate insights from the fetched data.")
 
         # --- Generate files in-memory ---
-        # Call the new functions. Notice they no longer need a 'filename'.
+        
         print("\n📝 Creating CSV data in memory...")
         summary_csv_data = self.create_local_csv_report(insights) # Summary Report
         raw_data_csv = self.create_full_posts_csv(insights) # Full report
+        pdf_data = self.create_pdf_report(
+            insights, 
+            report_title, 
+            start_date.strftime('%B %d, %Y'), 
+            end_date.strftime('%B %d, %Y'),
+            sort_metric_display
+        ) if include_pdf else None
         
         print("🖼️  Creating PowerPoint presentation in memory...")
         pptx_data = self.create_powerpoint_report(
@@ -514,12 +535,12 @@ class InstagramReporter:
             title_text=report_title, 
             logo_path=logo_path,
             sort_metric_display=sort_metric_display
-        )
+        ) if include_ppt else None
         
         print("\n✅ All reports generated successfully in memory.")
         
         # Return the data objects for the Streamlit app to handle
-        return summary_csv_data, raw_data_csv, pptx_data
+        return summary_csv_data, raw_data_csv, pdf_data, pptx_data
 
 
 
@@ -579,6 +600,36 @@ class InstagramReporter:
         except Exception as e:
             print(f"⚠️  Could not generate 'Reach per Day' chart. Reason: {e}")
 
+    def create_pdf_report(self, insights: Dict, report_title: str, start_date: str, end_date: str, sort_metric_display: str) -> bytes:
+        """
+        Creates a PDF report in-memory by rendering an HTML template.
+        """
+        print("--- PDF: Starting PDF generation ---")
+        
+        # Set up Jinja2 to load the template from the current directory
+        env = Environment(loader=FileSystemLoader('.'))
+        template = env.get_template("report_template.html")
+        
+        # Prepare the data context to pass to the template
+        # We need to format the dates nicely for display
+        context = {
+            "report_title": report_title,
+            "start_date": start_date,
+            "end_date": end_date,
+            "insights": insights,
+            "sort_metric_display": sort_metric_display
+        }
+        
+        # Render the template with the data
+        html_out = template.render(context)
+        print("--- PDF: HTML template rendered ---")
+        
+        # Use WeasyPrint to convert the rendered HTML to a PDF in memory
+        pdf_bytes = HTML(string=html_out).write_pdf()
+        print("--- PDF: PDF generated successfully in memory ---")
+        
+        return pdf_bytes
+    
     def _create_content_analysis_slide(self, prs: Presentation, insights: Dict):
         """Creates a slide with content analysis charts: Engagement by Type and Format Mix."""
         slide = prs.slides.add_slide(prs.slide_layouts[5])

@@ -1,4 +1,4 @@
-# Project Plan: Instagram Reporter SaaS
+# Project Plan: Social Media Analyst SaaS
 
 ## 1. Vision & Strategy
 
@@ -8,92 +8,107 @@
 
 **Our Solution:** A focused web application that does one thing exceptionally well: generating customizable, visually appealing reports. The primary goal is to provide a seamless user experience that saves time and delivers immediate, actionable value.
 
-**Methodology:** We are following a **Lean Startup / MVP (Minimum Viable Product)** approach. The strategy is to build, deploy, and test the core product with a small group of users, gather feedback, and iterate based on real-world usage.
+**Methodology:** We are following a **Lean Startup / MVP** approach. Having successfully deployed a functional MVP, we are now gathering user feedback to guide the development of V1.0, which will include persistent user accounts and tiered features.
 
 ---
 
-## 2. Project Status & Completed Milestones
+## 2. Project Status: MVP Deployed
 
-We have successfully completed the initial development and deployment of a fully functional MVP.
+We have successfully completed the initial development and deployment of a fully functional MVP. The application is live on Streamlit Community Cloud and is ready for alpha testing.
 
-### **Phase 1: Interactive UI - ✅ COMPLETE**
-*   Transformed the original Python script into an interactive web application using Streamlit.
-*   Implemented a full user interface with date selectors, text inputs, and a logo uploader.
-*   Engineered the backend to generate reports (PowerPoint, Summary CSV, Raw Data CSV) in-memory.
-*   Implemented robust state management (`st.session_state`) for a smooth user experience.
+### **Completed Milestones:**
 
-### **Phase 2: Secure Multi-User Authentication - ✅ COMPLETE**
-*   Implemented the industry-standard **OAuth 2.0 "Login with Facebook" flow**.
-*   Eliminated the need for end-users to manage secret `.env` files.
-*   The application now securely fetches an access token for each user's session.
-*   The UI dynamically fetches and displays a filtered list of the user's eligible Instagram Business Accounts.
-
-### **Feature Sprint: Reporting Engine Polish - ✅ COMPLETE**
-*   **Enhanced Logic:**
-    *   Segregated report analysis by content type (Static vs. Video).
-    *   Implemented user-selectable sorting for Top/Bottom posts based on various metrics (Reach, Likes, etc.).
-    *   Added adaptive logic to handle edge cases for small datasets to prevent post overlap in Top/Bottom lists.
-*   **Richer Outputs:**
-    *   Upgraded reports to include modern API metrics (e.g., `views`).
-    *   Added a paginated, multi-slide annexure with clickable links to the PowerPoint.
-    *   Added a full, raw data export CSV for all posts in the period.
-*   **Visualizations:**
-    *   Added a "Performance Over Time" slide with Likes per Day and Reach per Day line charts.
-    *   Added a "Content Strategy Analysis" slide comparing Engagement Rate by Type (bar chart) and Content Format Mix (pie chart).
-*   **Stability & UX:**
-    *   Implemented a date range limit and user-level rate limiting.
-    *   Added robust, persistent error handling and user-facing instructions.
-    *   Implemented a centralized logging system for errors (`app.log`) and usage analytics (`analytics.log`).
-
-### **Phase 3: Deployment - ✅ COMPLETE**
-*   Set up a version-controlled workflow using Git and a public GitHub repository.
-*   Successfully deployed the application to **Streamlit Community Cloud**.
-*   Configured the live application with production secrets and the correct OAuth Redirect URI.
-*   The application is now live and accessible for internal testing.
+*   **Phase 1: Interactive UI:** Transformed the original script into a full web application using Streamlit with a robust user interface and state management.
+*   **Phase 2: Secure Authentication:** Implemented the industry-standard OAuth 2.0 "Login with Facebook" flow, eliminating the need for manual token management for end-users.
+*   **Feature Sprint: Reporting Engine Polish:** Massively enhanced the reporting engine with content-type segregation, user-selectable sorting, advanced data metrics, visual charts, and a comprehensive, paginated PowerPoint annexure.
+*   **Phase 3: Deployment:** Successfully deployed the application to a live, public URL on Streamlit Community Cloud with production-ready secrets management.
+*   **Security Hardening:** Implemented CSRF protection (`itsdangerous`), moved all API calls to use POST requests and `Authorization: Bearer` headers, and added request timeouts.
 
 ---
 
-## 3. Immediate Next Steps & Roadmap
+## 3. Next Phase: V1.0 - Building the SaaS Foundation
 
-With the MVP deployed, the immediate focus shifts to gathering feedback and planning the next iteration.
+With the MVP validated, the next phase focuses on building the core infrastructure for a commercial SaaS product. The primary goals are to implement persistent user accounts and introduce tiered features.
 
-### **1. Alpha Testing (Current Step)**
-*   **Goal:** Share the live application URL with the internal team and trusted "alpha" testers.
-*   **Action:**
-    *   Add team members as "Testers" in the Meta App dashboard.
-    *   Provide them with the app URL and ask for structured feedback.
-    *   Monitor the `app.log` for any hidden errors and `analytics.log` to observe usage patterns.
+### **Sprint 1: User Account Management & Database Integration (Immediate Next Step)**
 
-### **2. Future Sprints & Feature Backlog**
+*   **Goal:** Move from temporary sessions to a persistent user database. This is the prerequisite for all SaaS features.
+*   **Key Features / Tasks:**
+    1.  **Provision Database:** Set up a managed PostgreSQL database (e.g., via Supabase or Heroku).
+    2.  **Add Dependencies:** Integrate `SQLAlchemy` and `psycopg2-binary` into the project.
+    3.  **Define User Model:** Create a `database.py` file to define the `User` table structure (id, facebook_id, name, email, tier, created_at, report_count).
+    4.  **Upgrade Auth Logic:** Overhaul the `process_auth` function in `Home.py` to perform a "login or sign-up" check:
+        *   On successful Facebook login, query the database for the user's `facebook_id`.
+        *   If the user exists, load their data (e.g., `tier`) into the session.
+        *   If the user does not exist, create a new user record in the database.
+    5.  **Track Usage:** Increment a `report_count` in the database each time a user successfully generates a report, replacing the temporary analytics logger.
+
+### **Sprint 2: Freemium Model & PDF Reporting**
+
+*   **Goal:** Create a clear feature distinction between free/beta users and future paid users.
+*   **Key Features / Tasks:**
+    1.  **Add PDF Dependencies:** Integrate `Jinja2` and `WeasyPrint` for HTML-to-PDF generation.
+    2.  **Create HTML Template:** Build a `report_template.html` that can be populated with report data.
+    3.  **Build PDF Engine:** Create a `create_pdf_report` method in `instagram_reporter.py`.
+    4.  **Implement Tiered UI:** Modify the download button logic in `Home.py` to:
+        *   Check the user's `tier` from the session state.
+        *   Show the "Download PDF" button for 'beta' or 'free' users.
+        *   Show the "Download PowerPoint" button for 'pro' or paying users.
+
+### **Sprint 3: Admin User Management Interface**
+
+*   **Goal:** Create a simple, secure web interface for you (as the admin) to manage users and access codes.
+*   **Key Features / Tasks:**
+    1.  **Build Admin Page:** Create a new, hidden Streamlit page (e.g., `pages/Admin.py`).
+    2.  **Secure Access:** Implement a simple check to ensure only your user ID can view this page.
+    3.  **Display Users:** Write logic to query and display all users from the database in a table.
+    4.  **Implement User Editing:** Add functionality to the admin page to:
+        *   Manually change a user's `tier` (e.g., upgrade a beta tester to "Pro").
+        *   View a user's `report_count`.
+        *   Generate and manage special one-time-use sign-up codes.
+
+---
+
+## 4. Future Sprints & Feature Backlog
 
 This backlog will be prioritized based on feedback from the alpha testing phase.
 
-*   **UI/UX Overhaul:**
-    *   A full visual redesign of the Streamlit app based on user feedback.
-    *   Potential migration to a more customizable front-end framework if needed.
-    *   FB Javascript SDK integration for a more seamless login experience. 
+*   **UI/UX Overhaul:** A full visual redesign of the Streamlit app.
 
 *   **Reporting Engine Enhancements:**
-    *   **"Key Insights" Slide:** Implement a slide that uses logic (or a future LLM integration) to generate automated text summaries (e.g., "Video posts performed 35% better this month.").
-    *   **Advanced Visualizations:** Add more charts like an Engagement by Hour of Day heatmap or a Reach vs. Engagement scatter plot.
-    *   **Historical Comparison:** Add the ability to compare the selected date range to the previous period.
-
-*   **New Core Features:**
-    *   **Facebook Page Reports:** Expand the reporting engine to generate performance reports for Facebook Pages.
-    *   **Report Customization:** Allow users to toggle sections of the report on/off.
-
-*   **Transition to a Commercial Product (SaaS Features):**
-    *   **App Review:** Submit the Meta App for review to get "Advanced Access" and move it to "Live" mode, allowing the general public to log in.
-    *   **Persistent User Accounts:** Implement a database (`PostgreSQL`) to manage user accounts, subscriptions, and securely store encrypted long-lived tokens.
-    *   **Billing Integration:** Integrate a payment provider like `Stripe`.
-    *   **Background Jobs:** Move report generation to a background worker queue (`Celery` with `Redis`) to handle long-running reports without timing out the web app.
-    *   **Centralized Logging:** Integrate a third-party logging service (e.g., Sentry, Logtail) for permanent, searchable logs.
+    *   **"Key Insights" Slide:** Implement a slide that uses logic or an LLM to generate automated text summaries.
+    *   **Facebook Page Reports:** Expand the reporting engine to generate reports for Facebook Pages.
+    **Richer Outputs:**
+    *   Upgraded reports to include modern API metrics (e.g., `views`).
+    *   Added a paginated, multi-slide annexure with clickable links to the PowerPoint.
+    *   Added a full, raw data export CSV for all posts in the period.
+    *   **Visualizations:**
+    *   Added a "Performance Over Time" slide with Likes per Day and Reach per Day line charts.
+    *   Added a "Content Strategy Analysis" slide comparing Engagement Rate by Type (bar chart) and Content Format Mix (pie chart).
+*   **Commercialization:**
+    *   **Billing Integration:** Integrate `Stripe` for subscription management.
+*   **Stability & UX:**
+    *   Implement user-level rate limiting.
+    *   Implement robust, persistent error handling and user-facing instructions.
+    *   Implement a centralized logging system for errors (`app.log`) and usage analytics (`analytics.log`).
 
 ---
 
----
+## 5. Consolidated Technology Stack
 
-## 4. Key Learnings & Technical Notes
+*   **Language:** Python 3.x
+*   **Web Framework:** Streamlit
+*   **Data Analysis:** Pandas
+*   **API Interaction:** Requests
+*   **Report Generation:** python-pptx, Jinja2, WeasyPrint
+*   **Database (V1.0):** PostgreSQL with SQLAlchemy
+*   **Authentication:** `itsdangerous` for CSRF protection
+*   **Deployment:** Streamlit Community Cloud
+*   **Future SaaS Stack:** Redis, Celery for background jobs.
+
+
+
+## 6. Key Learnings & Technical Notes
 
 This section summarizes critical technical lessons learned during the MVP development.
 
@@ -114,9 +129,7 @@ This section summarizes critical technical lessons learned during the MVP develo
 
 ---
 
-## 5. SaaS Architecture & Monetization
-
-This section outlines the plan for turning the tool into a commercial product.
+## 7. Notes from previous versions: SaaS Architecture & Monetization
 
 ### **Security & Scalability:**
 
@@ -137,14 +150,3 @@ This section outlines the plan for turning the tool into a commercial product.
 2.  **Integrate Billing:** Add a payment provider like `Stripe`.
 3.  **Public Beta:** Launch on platforms like Product Hunt and Indie Hackers. Offer an early-bird discount.
 4.  **Iterate:** Use feedback from the first paying customers to guide all future development and feature prioritization.
-
-## 6. Consolidated Technology Stack
-
-*   **Language:** Python 3.x
-*   **Web Framework:** Streamlit
-*   **Data Analysis:** Pandas
-*   **API Interaction:** Requests, Requests-OAuthlib
-*   **Report Generation:** python-pptx
-*   **Configuration:** python-dotenv
-*   **Deployment:** Streamlit Community Cloud, GitHub
-*   **Future SaaS Stack:** PostgreSQL, Redis, Celery, Stripe

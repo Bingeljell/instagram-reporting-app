@@ -1,5 +1,7 @@
 # Secrets
 .env
+.env.dev
+.env.production
 credentials.json
 /reports
 .streamlit/secrets.toml

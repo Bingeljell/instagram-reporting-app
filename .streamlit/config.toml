@@ -1,0 +1,6 @@
+[server]
+fileWatcherType = "poll"     # or "none" to fully disable watching
+runOnSave = false            # avoids extra reload churn
+
+[runner]
+fastReruns = false
